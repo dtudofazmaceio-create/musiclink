@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1014">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MusicLink">
+<title>MusicLink — Busca de músicas no YouTube</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ff3b3b'/%3E%3Cpath d='M26 18v22.5a7 7 0 1 0 4 6.3V27l14-3v12.5a7 7 0 1 0 4 6.3V14z' fill='white'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" id="appleIcon">
+<style>
+:root{
+  --bg:#0e1014; --bg2:#151821; --card:#1a1e29; --card2:#212635; --line:#2a3042;
+  --txt:#e9ecf3; --muted:#9097a8; --accent:#ff3b3b; --accent2:#ff6a3d; --ok:#2fcf7f; --warn:#f5b941; --err:#ff5b6b;
+  --r:14px; --sb:250px;
+  --safe-b:env(safe-area-inset-bottom,0px); --safe-t:env(safe-area-inset-top,0px);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--txt);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:#7fb2ff;text-decoration:none}
+[hidden]{display:none!important}
+.app{display:flex;min-height:100vh}
+
+/* Sidebar (desktop) */
+.sidebar{width:var(--sb);background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;position:fixed;inset:0 auto 0 0;padding:20px 14px;z-index:20}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 22px}
+.logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;flex:none}
+.logo svg{width:20px;height:20px;fill:#fff}
+.brand b{display:block;font-size:17px;letter-spacing:.2px}
+.brand small{color:var(--muted);font-size:12px}
+.nav{display:flex;flex-direction:column;gap:4px}
+.nav-btn{display:flex;align-items:center;gap:12px;padding:11px 12px;border:0;background:none;border-radius:10px;cursor:pointer;color:var(--muted);text-align:left;font-weight:500}
+.nav-btn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.nav-btn:hover{background:var(--card);color:var(--txt)}
+.nav-btn.active{background:var(--card2);color:var(--txt)}
+.nav-btn.active svg{stroke:var(--accent)}
+.side-foot{margin-top:auto;font-size:12.5px;color:var(--muted);display:flex;flex-direction:column;gap:10px;padding:10px 8px}
+.quota{display:flex;flex-direction:column;gap:5px}
+.qbar{height:6px;border-radius:6px;background:var(--line);overflow:hidden}
+.qbar i{display:block;height:100%;background:var(--ok);width:0;transition:width .3s}
+.acc{display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.dot.on{background:var(--ok)}
+
+/* Topbar + bottom nav (mobile) */
+.topbar{display:none}
+.bottomnav{display:none}
+
+main{flex:1;margin-left:var(--sb);padding:28px 34px 60px;max-width:calc(1180px + var(--sb));width:100%}
+.view{display:none;animation:fade .2s}
+.view.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.page-head{margin-bottom:18px}
+.page-head h1{font-size:24px;font-weight:700;letter-spacing:-.2px}
+.page-head p{color:var(--muted);margin-top:4px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px;margin-bottom:16px}
+.card h3{font-size:16px;margin-bottom:12px}
+label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted);font-weight:500}
+input[type=text],input[type=password],input[type=url],input:not([type]),select,textarea{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:11px 12px;color:var(--txt);font-size:15px;width:100%;outline:none;transition:border .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{min-height:200px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.6}
+.row2{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
+.hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);background:var(--card2);padding:10px 16px;border-radius:10px;cursor:pointer;font-weight:600;font-size:14px;white-space:nowrap;transition:transform .08s,background .15s,border .15s}
+.btn:hover{border-color:#3a4258;background:#272d3f}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:8px 12px;font-size:13px}
+.btn.icon{padding:8px;width:36px;height:36px}
+.btn.danger{color:var(--err)}
+.muted{color:var(--muted)}
+kbd{font-size:11px;background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:var(--muted)}
+
+/* Results */
+.res-head{display:flex;flex-direction:column;gap:14px}
+.res-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.res-title h2{font-size:19px}
+.stats{display:flex;gap:8px;flex-wrap:wrap}
+.pill{font-size:12px;padding:3px 9px;border-radius:20px;background:var(--bg2);border:1px solid var(--line);color:var(--muted);font-weight:600}
+.pill.ok{color:var(--ok);border-color:#1f5c3e}
+.pill.err{color:var(--err);border-color:#6a2730}
+.pill.warn{color:var(--warn);border-color:#6a5420}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap}
+.btn.yt{background:#ff0000;border-color:#ff0000;color:#fff}
+.btn.yt:hover{background:#e00000}
+.progress{display:flex;align-items:center;gap:12px}
+.progress .bar{flex:1;height:8px;background:var(--bg2);border-radius:8px;overflow:hidden}
+.progress .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .25s}
+.progress span{font-size:13px;color:var(--muted);min-width:70px;text-align:right}
+.plinfo{font-size:13.5px;background:#13261c;border:1px solid #1f5c3e;color:#bdf0d4;padding:10px 12px;border-radius:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.plinfo a{color:#7ef0b4;font-weight:600;word-break:break-all}
+
+.filterbar{display:flex;gap:10px;margin:0 0 12px;align-items:center;flex-wrap:wrap}
+.filterbar input{max-width:320px}
+.results{display:flex;flex-direction:column;gap:8px}
+.item{display:grid;grid-template-columns:34px 22px 132px 1fr auto;gap:14px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px 10px 10px;transition:border .15s}
+.item:hover{border-color:#3a4258}
+.item.off{opacity:.5}
+.item .num{font-weight:700;color:var(--muted);text-align:center;font-variant-numeric:tabular-nums}
+.chk{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
+.thumb{position:relative;width:132px;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:var(--bg2);cursor:pointer;border:0;padding:0;display:block}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .dur{position:absolute;right:4px;bottom:4px;background:rgba(0,0,0,.8);color:#fff;font-size:11px;font-weight:600;padding:1px 5px;border-radius:4px}
+.thumb .pl{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.35);opacity:0;transition:opacity .15s}
+.thumb:hover .pl{opacity:1}
+.thumb .pl svg{width:34px;height:34px;fill:#fff}
+.thumb.empty{display:grid;place-items:center;color:var(--muted);font-size:12px;cursor:default}
+.info{min-width:0}
+.req{font-weight:650;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.req .art{color:var(--muted);font-weight:500}
+.found{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.found b{color:#c9cede;font-weight:500}
+.link{font-size:13px;margin-top:3px;display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,Menlo,Consolas,monospace}
+.st{font-size:12px;font-weight:600;margin-top:3px}
+.st.err{color:var(--err)} .st.pend{color:var(--warn)} .st.man{color:#7fb2ff}
+.acts{display:flex;gap:6px}
+.spin{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;display:inline-block;vertical-align:middle}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* Lists */
+.plist{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.pcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:10px;cursor:pointer;transition:border .15s}
+.pcard:hover{border-color:#3a4258}
+.pcard h4{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcard .meta{font-size:12.5px;color:var(--muted)}
+.pcard .thumbs{display:flex;gap:4px;height:42px}
+.pcard .thumbs img{height:42px;aspect-ratio:16/9;object-fit:cover;border-radius:5px}
+.pcard .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.empty-st{text-align:center;color:var(--muted);padding:50px 20px}
+.empty-st svg{width:46px;height:46px;stroke:var(--line);fill:none;stroke-width:1.5;margin-bottom:10px}
+
+/* Config */
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.cfg-grid .card{margin:0}
+.field{margin-bottom:14px}
+.steps{padding-left:20px;color:#c9cede;font-size:14px;display:flex;flex-direction:column;gap:8px}
+.steps code,.code{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:12.5px;font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+.note{font-size:13px;background:#2a2312;border:1px solid #5a4719;color:#f3dca2;padding:10px 12px;border-radius:10px;margin-top:12px}
+.pwrap{position:relative}
+.pwrap input{padding-right:44px}
+.pwrap button{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;color:var(--muted);cursor:pointer;padding:6px}
+
+/* Modal */
+.modal{position:fixed;inset:0;background:rgba(5,6,10,.72);backdrop-filter:blur(4px);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal.open{display:flex;animation:fade .15s}
+.mbox{background:var(--card);border:1px solid var(--line);border-radius:16px;width:100%;max-width:560px;max-height:calc(100vh - 40px);overflow:auto;padding:22px}
+.mbox.wide{max-width:860px}
+.mhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
+.mhead h3{font-size:18px}
+.mhead .sub{font-size:13px;color:var(--muted);margin-top:2px}
+.xbtn{background:none;border:0;color:var(--muted);cursor:pointer;font-size:24px;line-height:1;padding:2px 6px}
+.player{aspect-ratio:16/9;width:100%;background:#000;border-radius:12px;overflow:hidden}
+.player iframe{width:100%;height:100%;border:0;display:block}
+.pnav{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px}
+.pnav .now{flex:1;min-width:0;text-align:center}
+.pnav .now b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pnav .now small{color:var(--muted)}
+.alts{display:flex;flex-direction:column;gap:8px;margin:12px 0}
+.alt{display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:10px;cursor:pointer;background:var(--bg2)}
+.alt:hover{border-color:#3a4258}
+.alt.sel{border-color:var(--accent);background:#2a1a1e}
+.alt img{width:120px;aspect-ratio:16/9;object-fit:cover;border-radius:6px}
+.alt b{font-size:14px;display:block;font-weight:600}
+.alt small{color:var(--muted);font-size:12.5px}
+.sep{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:16px 0 8px;font-weight:700}
+.inrow{display:flex;gap:8px}
+.inrow input{flex:1}
+.radio-row{display:flex;gap:8px;flex-wrap:wrap}
+.radio-row label{flex:1;min-width:120px;flex-direction:row;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;color:var(--txt)}
+.radio-row input{accent-color:var(--accent)}
+.radio-row label:has(input:checked){border-color:var(--accent)}
+.log{font-size:13px;color:var(--muted);max-height:140px;overflow:auto;background:var(--bg2);border-radius:10px;padding:10px;margin-top:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.log div.e{color:var(--err)} .log div.o{color:var(--ok)}
+
+/* Toast */
+.toasts{position:fixed;right:20px;bottom:20px;z-index:200;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{background:#262c3d;border:1px solid var(--line);color:var(--txt);padding:11px 16px;border-radius:10px;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.4);animation:tin .2s;max-width:360px}
+.toast.ok{border-left:3px solid var(--ok)} .toast.err{border-left:3px solid var(--err)}
+@keyframes tin{from{opacity:0;transform:translateY(8px)}}
+
+/* ===== Mobile ===== */
+@media (max-width:900px){
+  .sidebar{display:none}
+  .app{flex-direction:column}
+  .tq div{white-space:nowrap}
+  .topbar{display:flex;position:sticky;top:0;z-index:30;align-items:center;justify-content:space-between;background:rgba(14,16,20,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:calc(10px + var(--safe-t)) 16px 10px}
+  .topbar .brand{padding:0}
+  .topbar .logo{width:32px;height:32px;border-radius:9px}
+  .tq{font-size:11.5px;color:var(--muted);text-align:right}
+  main{margin-left:0;padding:16px 14px calc(90px + var(--safe-b))}
+  .bottomnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(21,24,33,.96);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px 6px calc(6px + var(--safe-b))}
+  .bottomnav .nav-btn{flex:1;flex-direction:column;gap:3px;font-size:11px;padding:7px 4px;align-items:center;text-align:center}
+  .bottomnav .nav-btn.active{background:none}
+  .page-head h1{font-size:21px}
+  .card{padding:16px}
+  .row2{grid-template-columns:1fr}
+  .cfg-grid{grid-template-columns:1fr}
+  .btns .btn.primary{flex:1}
+  .item{grid-template-columns:22px 96px 1fr;grid-template-areas:"chk th info" "acts acts acts";gap:10px;padding:10px}
+  .item .num{display:none}
+  .item .chk{grid-area:chk}
+  .item .thumb{grid-area:th;width:96px}
+  .item .info{grid-area:info}
+  .item .acts{grid-area:acts;justify-content:space-between;border-top:1px solid var(--line);padding-top:8px}
+  .item .acts .btn{flex:1;height:38px}
+  .req{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:14.5px}
+  .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .toolbar .btn{width:100%}
+  .toolbar .btn.yt{grid-column:1/-1;padding:12px}
+  .modal{padding:0;align-items:flex-end}
+  .mbox{border-radius:18px 18px 0 0;max-height:92vh;padding:18px 16px calc(18px + var(--safe-b))}
+  .alt{grid-template-columns:96px 1fr}
+  .alt img{width:96px}
+  .toasts{left:12px;right:12px;bottom:calc(84px + var(--safe-b));align-items:center}
+  .filterbar input{max-width:none}
+}
+</style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+<div class="app">
+
+  <!-- Sidebar desktop -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 3v10.6A3.5 3.5 0 1 0 11 17V8l8-1.7v5.3A3.5 3.5 0 1 0 21 15V1z"/></svg></div>
+      <div><b>MusicLink</b><small>Busca de músicas no YouTube</small></div>
+    </div>
+    <nav class="nav">
+      <button class="nav-btn active" data-view="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Nova busca</button>
+      <button class="nav-btn" data-view="listas"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Minhas listas</button>
+      <button class="nav-btn" data-view="config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Configurações</button>
+    </nav>
+    <div class="side-foot">
+      <div class="quota"><span id="quotaTxt">Cota hoje: 0 / 10.000</span><div class="qbar"><i id="quotaBar"></i></div></div>
+      <div class="acc"><span class="dot" id="accDot"></span><span id="accTxt">YouTube não conectado</span></div>
+    </div>
+  </aside>
+
+  <!-- Topbar mobile -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24"><path d="M9 3v10.6A3.5 3.5 0 1 0 11 17V8l8-1.7v5.3A3.5 3.5 0 1 0 21 15V1z"/></svg></div>
+      <div><b>MusicLink</b></div>
+    </div>
+    <div class="tq"><div id="quotaTxtM">Cota: 0</div><div id="accTxtM">não conectado</div></div>
+  </header>
+
+  <main>
+    <!-- ============ BUSCA ============ -->
+    <section class="view active" id="view-busca">
+      <div class="page-head">
+        <h1 id="buscaTitle">Nova busca</h1>
+        <p>Cole a lista que o cliente enviou (uma música por linha) e clique em <b>Buscar no YouTube</b>.</p>
+      </div>
+
+      <div class="card" id="inputCard">
+        <div class="row2">
+          <label>Nome da lista / cliente
+            <input id="projName" placeholder="Ex.: Casamento Ana & Pedro">
+          </label>
+          <label>Formato de cada linha
+            <select id="order">
+              <option value="ma">Música - Artista</option>
+              <option value="am">Artista - Música</option>
+            </select>
+          </label>
+        </div>
+        <label>Lista de músicas
+          <textarea id="listInput" spellcheck="false" placeholder="Evidências - Chitãozinho & Xororó&#10;Garota de Ipanema - Tom Jobim&#10;Perfect - Ed Sheeran&#10;Trem-Bala - Ana Vilela"></textarea>
+        </label>
+        <div class="hint"><span id="lineCount">0 músicas</span> · Separadores aceitos: <span class="code"> - </span> <span class="code"> | </span> <span class="code">;</span> ou TAB (colado do Excel). Numeração no início (1. / 1)) é ignorada.</div>
+        <div class="btns">
+          <button class="btn primary" id="btnSearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Buscar no YouTube</button>
+          <button class="btn ghost" id="btnClear">Limpar</button>
+          <span class="hint" style="margin:0">Atalho: <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+        </div>
+      </div>
+
+      <div id="resultsWrap" hidden>
+        <div class="card res-head">
+          <div class="res-title">
+            <h2 id="resName"></h2>
+            <div class="stats" id="resStats"></div>
+          </div>
+          <div class="progress" id="progress" hidden>
+            <div class="bar"><i id="progBar"></i></div>
+            <span id="progTxt"></span>
+            <button class="btn sm ghost" id="btnStop">Parar</button>
+          </div>
+          <div class="toolbar">
+            <button class="btn sm" data-tool="play"><svg viewBox="0 0 24 24"><path d="m6 4 14 8-14 8z"/></svg>Ouvir em sequência</button>
+            <button class="btn sm" data-tool="copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>Copiar links</button>
+            <button class="btn sm" data-tool="share"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>Compartilhar</button>
+            <button class="btn sm" data-tool="csv"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 21h16"/></svg>Exportar CSV</button>
+            <button class="btn sm" data-tool="quick"><svg viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg>Playlist rápida</button>
+            <button class="btn sm" data-tool="resume" id="btnResume" hidden><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>Continuar busca</button>
+            <button class="btn sm" data-tool="edit"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>Editar lista</button>
+            <button class="btn sm yt" data-tool="publish"><svg viewBox="0 0 24 24"><path d="M22 8.5a3 3 0 0 0-2-2.1C18.2 6 12 6 12 6s-6.2 0-8 .4a3 3 0 0 0-2 2.1A31 31 0 0 0 2 12a31 31 0 0 0 .1 3.5 3 3 0 0 0 2 2.1c1.7.4 7.9.4 7.9.4s6.2 0 8-.4a3 3 0 0 0 2-2.1A31 31 0 0 0 22 12a31 31 0 0 0-.1-3.5z"/><path d="m10 15 5-3-5-3z" fill="currentColor"/></svg>Publicar playlist no meu canal</button>
+          </div>
+          <div id="plInfo"></div>
+        </div>
+        <div class="filterbar">
+          <input id="filter" placeholder="Filtrar resultados…">
+          <span class="hint" style="margin:0">Desmarque a caixa para tirar a música da playlist.</span>
+        </div>
+        <div class="results" id="results"></div>
+      </div>
+    </section>
+
+    <!-- ============ LISTAS ============ -->
+    <section class="view" id="view-listas">
+      <div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
+        <div><h1>Minhas listas</h1><p>Todas as buscas ficam salvas neste aparelho (IndexedDB).</p></div>
+        <button class="btn primary" id="btnNew"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova busca</button>
+      </div>
+      <div class="filterbar"><input id="listFilter" placeholder="Procurar lista ou cliente…"></div>
+      <div class="plist" id="plist"></div>
+    </section>
+
+    <!-- ============ CONFIG ============ -->
+    <section class="view" id="view-config">
+      <div class="page-head"><h1>Configurações</h1><p>Chaves da API do YouTube, conta do canal e backup dos dados.</p></div>
+      <div class="cfg-grid">
+        <div class="card">
+          <h3>Credenciais do Google</h3>
+          <div class="field">
+            <label>API Key (YouTube Data API v3) — usada nas buscas
+              <div class="pwrap"><input type="password" id="cfgKey" placeholder="AIza…" autocomplete="off"><button type="button" data-eye="cfgKey">👁</button></div>
+            </label>
+          </div>
+          <div class="field">
+            <label>OAuth Client ID — usado para publicar playlists
+              <input type="text" id="cfgClient" placeholder="xxxxxxxx.apps.googleusercontent.com" autocomplete="off">
+            </label>
+          </div>
+          <div class="btns" style="margin-top:4px">
+            <button class="btn primary" id="btnSaveCfg">Salvar</button>
+            <button class="btn" id="btnTestKey">Testar API Key</button>
+            <button class="btn" id="btnLogin">Conectar canal</button>
+            <button class="btn ghost" id="btnLogout" hidden>Desconectar</button>
+          </div>
+          <div class="note" id="originNote">Endereço atual deste sistema: <span class="code" id="originTxt"></span><br>Cadastre esse endereço em <b>Origens JavaScript autorizadas</b> do Client ID.</div>
+        </div>
+
+        <div class="card">
+          <h3>Uso da cota (hoje)</h3>
+          <p class="muted" style="font-size:14px">O YouTube libera <b>10.000 unidades por dia</b> gratuitamente. Renova por volta das 4h–5h (horário de Brasília).</p>
+          <ul class="steps" style="margin-top:10px">
+            <li>Cada música buscada: <b>100</b> unidades (≈ 100 músicas/dia). Buscas repetidas usam o cache e não gastam nada.</li>
+            <li>Criar uma playlist: <b>50</b> + <b>50 por música</b> adicionada.</li>
+          </ul>
+          <div class="quota" style="margin-top:14px"><span id="quotaTxt2"></span><div class="qbar"><i id="quotaBar2"></i></div></div>
+          <p class="hint">O contador é uma estimativa deste aparelho. O valor oficial fica no Google Cloud Console → APIs → Cotas.</p>
+        </div>
+
+        <div class="card" style="grid-column:1/-1">
+          <h3>Como obter as chaves (uma vez só, ~10 minutos)</h3>
+          <ol class="steps">
+            <li>Acesse <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a> e crie um projeto (ex.: “MusicLink”).</li>
+            <li>Em <b>APIs e serviços → Biblioteca</b>, procure <b>YouTube Data API v3</b> e clique em <b>Ativar</b>.</li>
+            <li>Em <b>Credenciais → Criar credenciais → Chave de API</b>. Copie e cole no campo <b>API Key</b> acima. (Recomendado: restrinja a chave à YouTube Data API v3.)</li>
+            <li>Em <b>Tela de permissão OAuth</b> (Google Auth Platform): tipo <b>Externo</b>, preencha nome e e-mail, e em <b>Público-alvo → Usuários de teste</b> adicione o e-mail do Google dono do seu canal.</li>
+            <li>Em <b>Credenciais → Criar credenciais → ID do cliente OAuth</b>, tipo <b>Aplicativo da Web</b>. Em <b>Origens JavaScript autorizadas</b> adicione o endereço mostrado no quadro amarelo acima (ex.: <span class="code">https://seuusuario.github.io</span>). Copie o <b>ID do cliente</b> e cole no campo acima.</li>
+            <li>Clique em <b>Salvar</b> e depois em <b>Conectar canal</b>. Na tela do Google, escolha a conta/canal e autorize.</li>
+          </ol>
+          <div class="note">O login do Google não funciona abrindo o arquivo direto do computador (<span class="code">file://</span>). Hospede o HTML em um endereço https (GitHub Pages, Netlify, Vercel, seu site) ou rode localmente com <span class="code">http://localhost</span>. A busca de links funciona em qualquer endereço http/https.</div>
+        </div>
+
+        <div class="card" style="grid-column:1/-1">
+          <h3>Dados e backup</h3>
+          <p class="muted" style="font-size:14px">Tudo fica salvo no navegador deste aparelho. Faça backup para levar as listas para outro celular/computador.</p>
+          <div class="btns">
+            <button class="btn" id="btnExport">Exportar backup (.json)</button>
+            <button class="btn" id="btnImport">Importar backup</button>
+            <input type="file" id="fileImport" accept=".json,application/json" hidden>
+            <button class="btn ghost" id="btnClearCache">Limpar cache de buscas</button>
+            <button class="btn ghost danger" id="btnWipe">Apagar tudo</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom nav mobile -->
+  <nav class="bottomnav">
+    <button class="nav-btn active" data-view="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Buscar</button>
+    <button class="nav-btn" data-view="listas"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Listas</button>
+    <button class="nav-btn" data-view="config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Ajustes</button>
+  </nav>
+</div>
+
+<!-- Player modal -->
+<div class="modal" id="mPlayer">
+  <div class="mbox wide">
+    <div class="mhead"><div><h3 id="plTitle">Ouvir</h3><div class="sub" id="plSub"></div></div><button class="xbtn" data-close>&times;</button></div>
+    <div class="player" id="playerBox"></div>
+    <div class="pnav">
+      <button class="btn" id="pPrev"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Anterior</button>
+      <div class="now"><b id="pNow"></b><small id="pPos"></small></div>
+      <button class="btn" id="pNext">Próxima<svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+    </div>
+    <div class="btns" style="justify-content:center">
+      <a class="btn sm ghost" id="pOpen" target="_blank" rel="noopener">Abrir no YouTube</a>
+      <button class="btn sm ghost" id="pCopy">Copiar link</button>
+      <button class="btn sm ghost" id="pSwap">Trocar vídeo</button>
+    </div>
+  </div>
+</div>
+
+<!-- Swap modal -->
+<div class="modal" id="mSwap">
+  <div class="mbox">
+    <div class="mhead"><div><h3>Trocar vídeo</h3><div class="sub" id="swSub"></div></div><button class="xbtn" data-close>&times;</button></div>
+    <div class="sep">Resultados encontrados</div>
+    <div class="alts" id="swAlts"></div>
+    <div class="sep">Buscar com outro termo (100 unidades)</div>
+    <div class="inrow"><input id="swQuery"><button class="btn" id="swSearch">Buscar</button></div>
+    <div class="sep">Ou colar um link do YouTube</div>
+    <div class="inrow"><input id="swLink" placeholder="https://www.youtube.com/watch?v=…"><button class="btn" id="swUse">Usar</button></div>
+  </div>
+</div>
+
+<!-- Publish modal -->
+<div class="modal" id="mPublish">
+  <div class="mbox">
+    <div class="mhead"><div><h3>Publicar playlist no YouTube</h3><div class="sub" id="pubSub"></div></div><button class="xbtn" data-close>&times;</button></div>
+    <div class="field"><label>Título da playlist<input id="pubTitle" maxlength="150"></label></div>
+    <div class="field"><label>Descrição<textarea id="pubDesc" style="min-height:80px;font-family:inherit"></textarea></label></div>
+    <div class="field"><label>Visibilidade</label>
+      <div class="radio-row" style="margin-top:6px">
+        <label><input type="radio" name="priv" value="unlisted" checked>Não listada</label>
+        <label><input type="radio" name="priv" value="private">Privada</label>
+        <label><input type="radio" name="priv" value="public">Pública</label>
+      </div>
+      <div class="hint">“Não listada”: só quem tem o link vê — ideal para mandar ao cliente.</div>
+    </div>
+    <div class="hint" id="pubCost"></div>
+    <div class="progress" id="pubProg" hidden style="margin-top:12px"><div class="bar"><i id="pubBar"></i></div><span id="pubTxt"></span></div>
+    <div class="log" id="pubLog" hidden></div>
+    <div class="btns">
+      <button class="btn yt" id="pubGo" style="flex:1">Entrar com Google e publicar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+'use strict';
+/* =========================================================
+   Helpers
+   ========================================================= */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const decodeHtml = (() => { const t = document.createElement('textarea'); return s => { t.innerHTML = s || ''; return t.value; }; })();
+const ytUrl = id => 'https://www.youtube.com/watch?v=' + id;
+const fmtDate = t => new Date(t).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type; el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, type === 'err' ? 5500 : 2800);
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch { const t = document.createElement('textarea'); t.value = text; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+  toast('Copiado!', 'ok');
+}
+function download(name, content, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type}));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function extractId(s) {
+  s = (s || '').trim();
+  if (/^[\w-]{11}$/.test(s)) return s;
+  const m = s.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+function parseDur(iso) {
+  const m = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(iso || ''); if (!m) return '';
+  const h = +m[1] || 0, mi = +m[2] || 0, s = +m[3] || 0;
+  const p = n => String(n).padStart(2, '0');
+  return h ? `${h}:${p(mi)}:${p(s)}` : `${mi}:${p(s)}`;
+}
+
+/* =========================================================
+   IndexedDB
+   ========================================================= */
+let db;
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('musiclink', 1);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      if (!d.objectStoreNames.contains('projects')) d.createObjectStore('projects', {keyPath: 'id'});
+      if (!d.objectStoreNames.contains('settings')) d.createObjectStore('settings', {keyPath: 'key'});
+      if (!d.objectStoreNames.contains('cache')) d.createObjectStore('cache', {keyPath: 'q'});
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+const p2 = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const store = (s, m = 'readonly') => db.transaction(s, m).objectStore(s);
+const idb = {
+  get: (s, k) => p2(store(s).get(k)),
+  put: (s, v) => p2(store(s, 'readwrite').put(v)),
+  del: (s, k) => p2(store(s, 'readwrite').delete(k)),
+  all: s => p2(store(s).getAll()),
+  clear: s => p2(store(s, 'readwrite').clear()),
+};
+async function getSet(k, d = '') { const r = await idb.get('settings', k); return r ? r.value : d; }
+const setSet = (k, v) => idb.put('settings', {key: k, value: v});
+
+/* =========================================================
+   State
+   ========================================================= */
+let apiKey = '', clientId = '';
+let accessToken = '', tokenExp = 0, channelName = '';
+let project = null;       // current project
+let searching = false, stopFlag = false;
+let playerIdx = -1, swapIdx = -1;
+
+/* =========================================================
+   Quota (estimate, per Pacific day)
+   ========================================================= */
+function quotaDay() { return new Date().toLocaleDateString('en-CA', {timeZone: 'America/Los_Angeles'}); }
+async function addQuota(n) {
+  const k = 'quota-' + quotaDay();
+  await setSet(k, (await getSet(k, 0)) + n);
+  renderQuota();
+}
+async function renderQuota() {
+  const used = await getSet('quota-' + quotaDay(), 0);
+  const pct = Math.min(100, used / 100);
+  const txt = `Cota hoje: ${used.toLocaleString('pt-BR')} / 10.000`;
+  $('#quotaTxt').textContent = txt; $('#quotaTxt2').textContent = txt + ` (≈ ${Math.max(0, Math.floor((10000 - used) / 100))} buscas restantes)`;
+  $('#quotaTxtM').textContent = `Cota: ${used.toLocaleString('pt-BR')}/10k`;
+  [$('#quotaBar'), $('#quotaBar2')].forEach(b => { b.style.width = pct + '%'; b.style.background = pct > 85 ? 'var(--err)' : pct > 60 ? 'var(--warn)' : 'var(--ok)'; });
+}
+
+/* =========================================================
+   YouTube API
+   ========================================================= */
+function errMsg(reason, fallback, status) {
+  const map = {
+    quotaExceeded: 'A cota diária da API do YouTube acabou. Ela renova por volta das 4h–5h (Brasília). Os itens restantes ficam pendentes — clique em “Continuar busca” depois.',
+    dailyLimitExceeded: 'Limite diário da API atingido. Tente novamente amanhã.',
+    keyInvalid: 'API Key inválida. Confira em Configurações.',
+    accessNotConfigured: 'A YouTube Data API v3 não está ativada no seu projeto do Google Cloud.',
+    API_KEY_INVALID: 'API Key inválida. Confira em Configurações.',
+    ipRefererBlocked: 'A API Key está restrita e bloqueou este endereço. Ajuste as restrições da chave no Google Cloud.',
+    youtubeSignupRequired: 'Sua conta Google ainda não tem um canal no YouTube. Crie o canal e tente de novo.',
+    channelNotFound: 'Canal não encontrado para esta conta.',
+    insufficientPermissions: 'Permissão insuficiente. Desconecte e conecte o canal novamente autorizando o acesso ao YouTube.',
+    authError: 'Sessão do Google expirou. Conecte o canal novamente.',
+    videoNotFound: 'Vídeo não encontrado ou indisponível.',
+    forbidden: 'O YouTube recusou este vídeo (pode estar bloqueado para playlists).',
+  };
+  if (map[reason]) return map[reason];
+  if (status === 401) return map.authError;
+  return fallback || 'Erro na API do YouTube';
+}
+async function yt(path, params = {}, {method = 'GET', body, auth = false} = {}) {
+  const url = new URL('https://www.googleapis.com/youtube/v3/' + path);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const headers = {};
+  if (auth || (!apiKey && accessToken)) {
+    if (!accessToken) throw new Error('Conecte seu canal do YouTube primeiro.');
+    headers.Authorization = 'Bearer ' + accessToken;
+  } else if (apiKey) url.searchParams.set('key', apiKey);
+  else throw new Error('Cadastre sua API Key do YouTube em Configurações para fazer as buscas.');
+  if (body) headers['Content-Type'] = 'application/json';
+  let r;
+  try { r = await fetch(url, {method, headers, body: body ? JSON.stringify(body) : undefined}); }
+  catch { const e = new Error('Sem conexão com a internet ou o YouTube não respondeu.'); e.network = true; throw e; }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const reason = j?.error?.errors?.[0]?.reason || j?.error?.details?.[0]?.reason || '';
+    const e = new Error(errMsg(reason, j?.error?.message, r.status));
+    e.status = r.status; e.reason = reason; throw e;
+  }
+  return j;
+}
+
+function scoreResult(r, item) {
+  const t = norm(r.title), c = norm(r.channel), song = norm(item.song), art = norm(item.artist);
+  const qn = norm(item.q);
+  let s = 0;
+  if (song && t.includes(song)) s += 4;
+  if (art && (t.includes(art) || c.includes(art))) s += 3;
+  if (art && c.replace(/ topic$/, '').replace(/vevo$/, '').trim() === art) s += 2;
+  if (/\b(official|oficial|clipe|videoclipe|audio)\b/.test(t)) s += 2;
+  if (/ topic$/.test(c) || /vevo/.test(c)) s += 1;
+  for (const bad of ['cover', 'karaoke', 'reacao', 'react', 'reaction', 'tutorial', 'aula', 'como tocar', 'instrumental', 'remix', '8d', 'slowed', 'sped up', 'legendado', 'traducao', 'lyrics'])
+    if (t.includes(bad) && !qn.includes(bad)) s -= 3;
+  if ((t.includes('ao vivo') || /\blive\b/.test(t)) && !qn.includes('ao vivo') && !qn.includes('live')) s -= 1;
+  return s;
+}
+
+async function searchQuery(q, force = false) {
+  const key = norm(q);
+  if (!force) {
+    const c = await idb.get('cache', key);
+    if (c && Date.now() - c.t < 45 * 864e5) return c.results;
+  }
+  const j = await yt('search', {part: 'snippet', type: 'video', maxResults: 6, q, regionCode: 'BR', relevanceLanguage: 'pt'});
+  await addQuota(100);
+  let results = (j.items || []).filter(it => it.id?.videoId).map(it => ({
+    id: it.id.videoId,
+    title: decodeHtml(it.snippet.title),
+    channel: decodeHtml(it.snippet.channelTitle),
+    thumb: it.snippet.thumbnails?.medium?.url || it.snippet.thumbnails?.default?.url || `https://i.ytimg.com/vi/${it.id.videoId}/mqdefault.jpg`,
+    dur: ''
+  }));
+  // durations (1 unit)
+  if (results.length) {
+    try {
+      const v = await yt('videos', {part: 'contentDetails', id: results.map(r => r.id).join(',')});
+      await addQuota(1);
+      const m = {}; (v.items || []).forEach(x => m[x.id] = parseDur(x.contentDetails?.duration));
+      results.forEach(r => r.dur = m[r.id] || '');
+    } catch {}
+  }
+  await idb.put('cache', {q: key, t: Date.now(), results});
+  return results;
+}
+
+async function videoInfo(id) {
+  const j = await yt('videos', {part: 'snippet,contentDetails', id});
+  await addQuota(1);
+  const v = j.items?.[0]; if (!v) throw new Error('Vídeo não encontrado.');
+  return {id, title: decodeHtml(v.snippet.title), channel: decodeHtml(v.snippet.channelTitle),
+    thumb: v.snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`, dur: parseDur(v.contentDetails?.duration)};
+}
+
+/* =========================================================
+   Google login (Google Identity Services)
+   ========================================================= */
+function getToken(forceConsent = false) {
+  return new Promise((res, rej) => {
+    if (!forceConsent && accessToken && Date.now() < tokenExp - 60000) return res(accessToken);
+    if (location.protocol === 'file:') return rej(new Error('O login do Google não funciona com o arquivo aberto direto do computador. Hospede o sistema em https:// ou http://localhost (veja Configurações).'));
+    if (!clientId) return rej(new Error('Cadastre o OAuth Client ID em Configurações para publicar playlists.'));
+    if (!window.google?.accounts?.oauth2) return rej(new Error('A biblioteca de login do Google não carregou. Verifique a internet e recarregue a página.'));
+    const tc = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/youtube',
+      callback: async r => {
+        if (r.error) return rej(new Error(r.error_description || r.error));
+        accessToken = r.access_token; tokenExp = Date.now() + (r.expires_in || 3600) * 1000;
+        try {
+          const c = await yt('channels', {part: 'snippet', mine: 'true'}, {auth: true});
+          await addQuota(1);
+          channelName = c.items?.[0]?.snippet?.title || '';
+          if (!channelName) { accessToken = ''; return rej(new Error(errMsg('youtubeSignupRequired'))); }
+        } catch (e) { return rej(e); }
+        renderAccount(); res(accessToken);
+      },
+      error_callback: e => rej(new Error(e?.type === 'popup_closed' ? 'Login cancelado.' : e?.type === 'popup_failed_to_open' ? 'O navegador bloqueou a janela de login. Libere pop-ups para este site.' : (e?.message || 'Falha no login.')))
+    });
+    tc.requestAccessToken({prompt: forceConsent ? 'consent' : ''});
+  });
+}
+function renderAccount() {
+  const on = !!(accessToken && Date.now() < tokenExp);
+  $('#accDot').classList.toggle('on', on);
+  $('#accTxt').textContent = on ? `Canal: ${channelName}` : 'YouTube não conectado';
+  $('#accTxtM').textContent = on ? channelName : 'não conectado';
+  $('#btnLogin').textContent = on ? `Conectado: ${channelName}` : 'Conectar canal';
+  $('#btnLogout').hidden = !on;
+}
+
+/* =========================================================
+   Parsing
+   ========================================================= */
+function parseList(text, order) {
+  return text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !/^[-–—=_*#\s]+$/.test(l)).map(raw => {
+    let line = raw.replace(/^\s*\d{1,3}\s*[.)º°]\s*/, '').replace(/^[•\-*]\s+/, '').trim();
+    let parts = line.split(/\t|\s*;\s*|\s+[-–—|]\s+|\s*\|\s*/).map(s => s.trim()).filter(Boolean);
+    if (parts.length < 2) {
+      const m = line.split(/\s*[–—]\s*/);
+      if (m.length >= 2) parts = m;
+    }
+    let song = line, artist = '';
+    if (parts.length >= 2) {
+      if (order === 'am') { artist = parts[0]; song = parts.slice(1).join(' '); }
+      else { song = parts[0]; artist = parts.slice(1).join(' '); }
+    }
+    return {
+      id: uid(), raw, song, artist,
+      q: (song + (artist ? ' ' + artist : '')).trim(),
+      status: 'pend', results: [], sel: 0, custom: null, include: true, err: ''
+    };
+  });
+}
+const chosen = it => it.custom || it.results[it.sel] || null;
+
+/* =========================================================
+   Projects
+   ========================================================= */
+async function saveProject() {
+  if (!project) return;
+  project.updated = Date.now();
+  await idb.put('projects', project);
+  await setSet('currentId', project.id);
+}
+
+async function startSearch() {
+  const text = $('#listInput').value;
+  const order = $('#order').value;
+  const items = parseList(text, order);
+  if (!items.length) return toast('Cole pelo menos uma música na lista.', 'err');
+  if (!apiKey && !accessToken) { toast('Cadastre a API Key do YouTube primeiro.', 'err'); return showView('config'); }
+  const name = $('#projName').value.trim() || ('Lista ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}));
+
+  if (project && project._editing) {
+    // keep results for lines that did not change
+    const old = new Map(project.items.map(i => [norm(i.q), i]));
+    project.items = items.map(n => { const o = old.get(norm(n.q)); return o ? {...o, raw: n.raw, song: n.song, artist: n.artist} : n; });
+    project.name = name; project.order = order; project.text = text; delete project._editing;
+  } else {
+    project = {id: uid(), name, order, text, created: Date.now(), updated: Date.now(), items, playlists: []};
+  }
+  await saveProject();
+  $('#inputCard').hidden = true;
+  $('#buscaTitle').textContent = 'Resultado da busca';
+  renderProject();
+  runSearch();
+}
+
+async function runSearch() {
+  if (searching || !project) return;
+  const todo = project.items.filter(i => i.status === 'pend' || i.status === 'err');
+  if (!todo.length) { renderProject(); return; }
+  searching = true; stopFlag = false;
+  $('#progress').hidden = false; $('#btnResume').hidden = true;
+  let done = 0; const total = todo.length;
+  const upd = () => { $('#progBar').style.width = (done / total * 100) + '%'; $('#progTxt').textContent = `${done} / ${total}`; };
+  upd();
+  let fatal = null, idx = 0;
+  const worker = async () => {
+    while (idx < todo.length && !stopFlag && !fatal) {
+      const it = todo[idx++];
+      it.status = 'loading'; renderItem(it);
+      try {
+        const res = await searchQuery(it.q);
+        if (!res.length) { it.status = 'none'; it.results = []; }
+        else {
+          // rank but keep API order for ties
+          const ranked = res.map((r, i) => ({r, s: scoreResult(r, it), i})).sort((a, b) => b.s - a.s || a.i - b.i).map(x => x.r);
+          it.results = ranked; it.sel = 0; it.status = 'ok'; it.err = '';
+        }
+      } catch (e) {
+        it.status = 'err'; it.err = e.message;
+        if (e.reason === 'quotaExceeded' || e.reason === 'dailyLimitExceeded' || e.status === 400 || e.status === 403 && e.reason !== 'forbidden') { fatal = e; it.status = 'pend'; }
+      }
+      done++; upd(); renderItem(it); renderStats();
+      await saveProject();
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  todo.forEach(i => { if (i.status === 'loading') i.status = 'pend'; });
+  searching = false; $('#progress').hidden = true;
+  await saveProject(); renderProject();
+  if (fatal) toast(fatal.message, 'err');
+  else if (stopFlag) toast('Busca interrompida. Clique em “Continuar busca” para retomar.');
+  else {
+    const ok = project.items.filter(i => chosen(i)).length;
+    toast(`Pronto! ${ok} de ${project.items.length} músicas encontradas.`, 'ok');
+  }
+}
+
+/* =========================================================
+   Render: project / items
+   ========================================================= */
+function itemHTML(it, i) {
+  const c = chosen(it);
+  let thumb, info;
+  const req = `<div class="req">${esc(it.song)}${it.artist ? ` <span class="art">— ${esc(it.artist)}</span>` : ''}</div>`;
+  if (it.status === 'loading') {
+    thumb = `<div class="thumb empty"><span class="spin"></span></div>`;
+    info = `${req}<div class="st pend">Buscando…</div>`;
+  } else if (c) {
+    thumb = `<button class="thumb" data-act="play" title="Ouvir"><img loading="lazy" src="${esc(c.thumb)}" alt="">${c.dur ? `<span class="dur">${esc(c.dur)}</span>` : ''}<span class="pl"><svg viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z"/></svg></span></button>`;
+    info = `${req}<div class="found"><b>${esc(c.title)}</b> · ${esc(c.channel)}</div>
+      <a class="link" href="${ytUrl(c.id)}" target="_blank" rel="noopener">${ytUrl(c.id)}</a>
+      ${it.custom ? '<div class="st man">Link escolhido manualmente</div>' : ''}`;
+  } else {
+    thumb = `<div class="thumb empty">${it.status === 'pend' ? 'pendente' : 'sem vídeo'}</div>`;
+    const msg = it.status === 'none' ? 'Nada encontrado — clique em Trocar para buscar com outro termo ou colar um link.' :
+                it.status === 'err' ? 'Erro: ' + esc(it.err) : 'Aguardando busca';
+    info = `${req}<div class="st ${it.status === 'pend' ? 'pend' : 'err'}">${msg}</div>`;
+  }
+  return `<div class="item${it.include ? '' : ' off'}" data-id="${it.id}">
+    <div class="num">${i + 1}</div>
+    <input type="checkbox" class="chk" data-act="inc" ${it.include ? 'checked' : ''} title="Incluir na playlist">
+    ${thumb}
+    <div class="info">${info}</div>
+    <div class="acts">
+      <button class="btn icon sm" data-act="play" title="Ouvir" ${c ? '' : 'disabled'}><svg viewBox="0 0 24 24"><path d="m6 4 14 8-14 8z"/></svg></button>
+      <a class="btn icon sm" ${c ? `href="${ytUrl(c.id)}" target="_blank" rel="noopener"` : 'aria-disabled="true" style="opacity:.5;pointer-events:none"'} title="Abrir no YouTube"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg></a>
+      <button class="btn icon sm" data-act="copy" title="Copiar link" ${c ? '' : 'disabled'}><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>
+      <button class="btn icon sm" data-act="swap" title="Trocar vídeo"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
+      <button class="btn icon sm danger" data-act="del" title="Remover da lista"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+    </div>
+  </div>`;
+}
+function renderItem(it) {
+  const el = document.querySelector(`.item[data-id="${it.id}"]`);
+  if (!el) return;
+  const i = project.items.indexOf(it);
+  el.outerHTML = itemHTML(it, i);
+}
+function renderStats() {
+  if (!project) return;
+  const n = project.items.length;
+  const ok = project.items.filter(i => chosen(i)).length;
+  const bad = project.items.filter(i => i.status === 'none' || i.status === 'err').length;
+  const pend = project.items.filter(i => i.status === 'pend').length;
+  const inc = project.items.filter(i => i.include && chosen(i)).length;
+  $('#resStats').innerHTML = `<span class="pill">${n} músicas</span><span class="pill ok">${ok} encontradas</span>${bad ? `<span class="pill err">${bad} sem resultado</span>` : ''}${pend && !searching ? `<span class="pill warn">${pend} pendentes</span>` : ''}<span class="pill">${inc} na playlist</span>`;
+  $('#btnResume').hidden = searching || !project.items.some(i => i.status === 'pend' || i.status === 'err');
+}
+function renderPlInfo() {
+  const pls = project?.playlists || [];
+  $('#plInfo').innerHTML = pls.length ? pls.map(p => `<div class="plinfo" style="margin-top:6px">✅ Playlist publicada em ${fmtDate(p.created)} (${p.count} músicas): <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a><button class="btn sm ghost" data-copy="${esc(p.url)}">Copiar</button></div>`).join('') : '';
+}
+function renderProject() {
+  if (!project) { $('#resultsWrap').hidden = true; $('#inputCard').hidden = false; return; }
+  $('#resultsWrap').hidden = false;
+  $('#resName').textContent = project.name;
+  const f = norm($('#filter').value);
+  $('#results').innerHTML = project.items.map((it, i) => (!f || norm(it.q + ' ' + (chosen(it)?.title || '')).includes(f)) ? itemHTML(it, i) : '').join('');
+  renderStats(); renderPlInfo();
+}
+
+/* =========================================================
+   Results actions
+   ========================================================= */
+$('#results').addEventListener('click', async e => {
+  const actEl = e.target.closest('[data-act]'); if (!actEl) return;
+  const row = e.target.closest('.item'); if (!row) return;
+  const it = project.items.find(x => x.id === row.dataset.id); if (!it) return;
+  const act = actEl.dataset.act;
+  if (act === 'inc') { it.include = actEl.checked; row.classList.toggle('off', !it.include); renderStats(); await saveProject(); return; }
+  if (act === 'play') openPlayer(project.items.indexOf(it));
+  if (act === 'copy') { const c = chosen(it); if (c) copyText(ytUrl(c.id)); }
+  if (act === 'swap') openSwap(project.items.indexOf(it));
+  if (act === 'del') {
+    if (!confirm(`Remover “${it.song}” desta lista?`)) return;
+    project.items.splice(project.items.indexOf(it), 1); await saveProject(); renderProject();
+  }
+});
+$('#filter').addEventListener('input', renderProject);
+$('#plInfo').addEventListener('click', e => { const b = e.target.closest('[data-copy]'); if (b) copyText(b.dataset.copy); });
+
+function listText(withHeader = true) {
+  const lines = project.items.map((it, i) => {
+    const c = chosen(it);
+    return `${i + 1}. ${it.song}${it.artist ? ' - ' + it.artist : ''}\n${c ? ytUrl(c.id) : '(não encontrada)'}`;
+  });
+  return (withHeader ? `🎵 ${project.name}\n\n` : '') + lines.join('\n\n');
+}
+function quickUrl() {
+  const ids = project.items.filter(i => i.include).map(chosen).filter(Boolean).map(c => c.id);
+  return {ids, url: 'https://www.youtube.com/watch_videos?video_ids=' + ids.slice(0, 50).join(',')};
+}
+
+$('.toolbar').addEventListener('click', async e => {
+  const b = e.target.closest('[data-tool]'); if (!b || !project) return;
+  const t = b.dataset.tool;
+  if (t === 'copy') copyText(listText());
+  if (t === 'share') {
+    const text = listText();
+    if (navigator.share) { try { await navigator.share({title: project.name, text}); } catch {} }
+    else window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+  }
+  if (t === 'csv') {
+    const rows = [['#', 'Música', 'Artista', 'Título no YouTube', 'Canal', 'Duração', 'Link']];
+    project.items.forEach((it, i) => { const c = chosen(it); rows.push([i + 1, it.song, it.artist, c?.title || '', c?.channel || '', c?.dur || '', c ? ytUrl(c.id) : '']); });
+    const csv = '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    download(project.name.replace(/[\\/:*?"<>|]+/g, '_') + '.csv', csv, 'text/csv;charset=utf-8');
+  }
+  if (t === 'play') { const first = project.items.findIndex(i => i.include && chosen(i)); if (first < 0) return toast('Nenhuma música encontrada ainda.', 'err'); openPlayer(first); }
+  if (t === 'quick') {
+    const {ids, url} = quickUrl();
+    if (!ids.length) return toast('Nenhuma música encontrada ainda.', 'err');
+    if (ids.length > 50) toast('A playlist rápida aceita até 50 músicas — abrindo as 50 primeiras. Use “Publicar” para a lista completa.');
+    window.open(url, '_blank');
+  }
+  if (t === 'resume') runSearch();
+  if (t === 'edit') {
+    project._editing = true;
+    $('#projName').value = project.name; $('#order').value = project.order || 'ma';
+    $('#listInput').value = project.text || project.items.map(i => project.order === 'am' ? `${i.artist} - ${i.song}` : `${i.song}${i.artist ? ' - ' + i.artist : ''}`).join('\n');
+    countLines();
+    $('#inputCard').hidden = false; $('#inputCard').scrollIntoView({behavior: 'smooth'});
+    $('#btnSearch').lastChild.textContent = 'Atualizar busca';
+    toast('Edite a lista e clique em “Atualizar busca”. Músicas já encontradas não gastam cota de novo.');
+  }
+  if (t === 'publish') openPublish();
+});
+$('#btnStop').onclick = () => { stopFlag = true; };
+
+/* =========================================================
+   Player
+   ========================================================= */
+function playable() { return project.items.map((it, i) => ({it, i})).filter(x => chosen(x.it)); }
+function openPlayer(i) {
+  playerIdx = i; const it = project.items[i]; const c = chosen(it); if (!c) return;
+  const list = playable(); const pos = list.findIndex(x => x.i === i);
+  $('#plTitle').textContent = it.song + (it.artist ? ' — ' + it.artist : '');
+  $('#plSub').textContent = `${c.title} · ${c.channel}`;
+  $('#pNow').textContent = c.title; $('#pPos').textContent = `${pos + 1} de ${list.length}`;
+  $('#playerBox').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${c.id}?autoplay=1&rel=0&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+  $('#pOpen').href = ytUrl(c.id);
+  $('#pPrev').disabled = pos <= 0; $('#pNext').disabled = pos >= list.length - 1;
+  openModal('mPlayer');
+}
+function stepPlayer(d) { const list = playable(); const pos = list.findIndex(x => x.i === playerIdx); const n = list[pos + d]; if (n) openPlayer(n.i); }
+$('#pPrev').onclick = () => stepPlayer(-1);
+$('#pNext').onclick = () => stepPlayer(1);
+$('#pCopy').onclick = () => { const c = chosen(project.items[playerIdx]); if (c) copyText(ytUrl(c.id)); };
+$('#pSwap').onclick = () => { closeModal('mPlayer'); openSwap(playerIdx); };
+
+/* =========================================================
+   Swap
+   ========================================================= */
+function openSwap(i) {
+  swapIdx = i; const it = project.items[i];
+  $('#swSub').textContent = it.song + (it.artist ? ' — ' + it.artist : '');
+  $('#swQuery').value = it.q; $('#swLink').value = '';
+  renderAlts(); openModal('mSwap');
+}
+function renderAlts() {
+  const it = project.items[swapIdx]; const c = chosen(it);
+  const list = [...(it.custom ? [it.custom] : []), ...it.results.filter(r => !it.custom || r.id !== it.custom.id)];
+  $('#swAlts').innerHTML = list.length ? list.map(r => `<div class="alt ${c && c.id === r.id ? 'sel' : ''}" data-vid="${r.id}">
+    <img loading="lazy" src="${esc(r.thumb)}" alt=""><div><b>${esc(r.title)}</b><small>${esc(r.channel)}${r.dur ? ' · ' + esc(r.dur) : ''}</small></div></div>`).join('')
+    : '<div class="muted" style="font-size:14px">Nenhum resultado ainda.</div>';
+}
+$('#swAlts').addEventListener('click', async e => {
+  const a = e.target.closest('.alt'); if (!a) return;
+  const it = project.items[swapIdx]; const id = a.dataset.vid;
+  const k = it.results.findIndex(r => r.id === id);
+  if (k >= 0) { it.sel = k; it.custom = null; }
+  it.status = 'ok';
+  await saveProject(); renderAlts(); renderItem(it); renderStats();
+  toast('Vídeo trocado.', 'ok'); closeModal('mSwap');
+});
+$('#swSearch').onclick = async () => {
+  const q = $('#swQuery').value.trim(); if (!q) return;
+  const b = $('#swSearch'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+  try {
+    const it = project.items[swapIdx];
+    const res = await searchQuery(q, true);
+    it.q = q; it.results = res; it.sel = 0; it.custom = null; it.status = res.length ? 'ok' : 'none';
+    await saveProject(); renderAlts(); renderItem(it); renderStats();
+    if (!res.length) toast('Nada encontrado com esse termo.', 'err');
+  } catch (e) { toast(e.message, 'err'); }
+  b.disabled = false; b.textContent = 'Buscar';
+};
+$('#swUse').onclick = async () => {
+  const id = extractId($('#swLink').value);
+  if (!id) return toast('Link do YouTube inválido.', 'err');
+  const it = project.items[swapIdx];
+  try {
+    let info;
+    try { info = await videoInfo(id); }
+    catch { info = {id, title: 'Vídeo ' + id, channel: 'link manual', thumb: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`, dur: ''}; }
+    it.custom = info; it.status = 'ok';
+    await saveProject(); renderItem(it); renderStats(); closeModal('mSwap'); toast('Link definido.', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+};
+
+/* =========================================================
+   Publish playlist
+   ========================================================= */
+function openPublish() {
+  const vids = project.items.filter(i => i.include).map(chosen).filter(Boolean);
+  if (!vids.length) return toast('Nenhuma música encontrada para publicar.', 'err');
+  $('#pubTitle').value = project.name.slice(0, 150);
+  $('#pubDesc').value = project.items.filter(i => i.include && chosen(i)).map((it, k) => `${k + 1}. ${it.song}${it.artist ? ' - ' + it.artist : ''}`).join('\n').slice(0, 4900);
+  $('#pubSub').textContent = `${vids.length} músicas serão adicionadas na ordem da lista`;
+  const cost = 50 + vids.length * 50;
+  $('#pubCost').innerHTML = `Custo estimado: <b>${cost.toLocaleString('pt-BR')}</b> unidades de cota.` + (cost > 10000 ? ' <span style="color:var(--err)">Acima do limite diário — o restante pode ser concluído amanhã.</span>' : '');
+  $('#pubProg').hidden = true; $('#pubLog').hidden = true; $('#pubLog').innerHTML = '';
+  $('#pubGo').disabled = false; $('#pubGo').textContent = (accessToken && Date.now() < tokenExp) ? `Publicar no canal “${channelName}”` : 'Entrar com Google e publicar';
+  openModal('mPublish');
+}
+function plog(msg, cls = '') { const l = $('#pubLog'); l.hidden = false; const d = document.createElement('div'); d.className = cls; d.textContent = msg; l.appendChild(d); l.scrollTop = l.scrollHeight; }
+
+$('#pubGo').onclick = async () => {
+  const go = $('#pubGo'); go.disabled = true;
+  const title = $('#pubTitle').value.trim() || project.name;
+  const description = $('#pubDesc').value;
+  const privacyStatus = document.querySelector('input[name=priv]:checked').value;
+  const entries = project.items.filter(i => i.include && chosen(i));
+  try {
+    go.textContent = 'Aguardando login…';
+    await getToken();
+    go.textContent = 'Publicando…';
+    $('#pubProg').hidden = false;
+    plog('Criando playlist “' + title + '”…');
+    const pl = await yt('playlists', {part: 'snippet,status'}, {method: 'POST', auth: true, body: {snippet: {title, description, defaultLanguage: 'pt-BR'}, status: {privacyStatus}}});
+    await addQuota(50);
+    const url = 'https://www.youtube.com/playlist?list=' + pl.id;
+    plog('Playlist criada: ' + url, 'o');
+    let ok = 0, fail = 0, k = 0;
+    for (const it of entries) {
+      const c = chosen(it); k++;
+      $('#pubBar').style.width = (k / entries.length * 100) + '%'; $('#pubTxt').textContent = `${k} / ${entries.length}`;
+      let tries = 0, added = false;
+      while (!added && tries < 4) {
+        try {
+          if (Date.now() > tokenExp - 60000) await getToken();
+          await yt('playlistItems', {part: 'snippet'}, {method: 'POST', auth: true, body: {snippet: {playlistId: pl.id, resourceId: {kind: 'youtube#video', videoId: c.id}}}});
+          await addQuota(50); added = true; ok++;
+        } catch (e) {
+          tries++;
+          if (e.reason === 'quotaExceeded') { plog('Cota esgotada. ' + ok + ' músicas adicionadas até aqui.', 'e'); throw Object.assign(new Error(e.message), {partial: {id: pl.id, url, ok}}); }
+          if (e.status === 409 || e.status >= 500 || e.network) { await sleep(800 * tries); continue; }
+          plog(`✗ ${it.song}: ${e.message}`, 'e'); fail++; break;
+        }
+      }
+      if (!added && tries >= 4) { plog(`✗ ${it.song}: YouTube não respondeu`, 'e'); fail++; }
+      await sleep(150);
+    }
+    project.playlists = project.playlists || [];
+    project.playlists.unshift({id: pl.id, url, title, privacy: privacyStatus, count: ok, created: Date.now()});
+    await saveProject(); renderPlInfo(); renderLists();
+    plog(`Concluído: ${ok} adicionadas${fail ? `, ${fail} com erro` : ''}.`, 'o');
+    toast('Playlist publicada no seu canal!', 'ok');
+    go.disabled = false; go.textContent = 'Abrir playlist no YouTube';
+    go.onclick = () => window.open(url, '_blank');
+  } catch (e) {
+    if (e.partial) {
+      project.playlists = project.playlists || [];
+      project.playlists.unshift({id: e.partial.id, url: e.partial.url, title, privacy: privacyStatus, count: e.partial.ok, created: Date.now()});
+      await saveProject(); renderPlInfo();
+    }
+    plog(e.message, 'e'); toast(e.message, 'err');
+    go.disabled = false; go.textContent = 'Tentar novamente';
+  }
+};
+const pubHandler = $('#pubGo').onclick;
+
+/* =========================================================
+   Lists view
+   ========================================================= */
+async function renderLists() {
+  const all = (await idb.all('projects')).sort((a, b) => b.updated - a.updated);
+  const f = norm($('#listFilter').value);
+  const list = all.filter(p => !f || norm(p.name + ' ' + p.items.map(i => i.q).join(' ')).includes(f));
+  if (!list.length) {
+    $('#plist').innerHTML = `<div class="empty-st" style="grid-column:1/-1"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><div>${all.length ? 'Nenhuma lista encontrada.' : 'Nenhuma lista ainda. Faça sua primeira busca!'}</div></div>`;
+    return;
+  }
+  $('#plist').innerHTML = list.map(p => {
+    const ok = p.items.filter(i => chosen(i)).length;
+    const th = p.items.map(chosen).filter(Boolean).slice(0, 5).map(c => `<img loading="lazy" src="${esc(c.thumb)}" alt="">`).join('');
+    const pub = p.playlists?.length ? `<span class="pill ok">Publicada</span>` : '';
+    return `<div class="pcard" data-pid="${p.id}">
+      <div class="row"><h4>${esc(p.name)}</h4>${pub}</div>
+      <div class="thumbs">${th}</div>
+      <div class="meta">${p.items.length} músicas · ${ok} encontradas · ${fmtDate(p.updated)}</div>
+      <div class="row">
+        <button class="btn sm" data-pact="open">Abrir</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn sm ghost" data-pact="dup" title="Duplicar">Duplicar</button>
+          <button class="btn sm ghost danger" data-pact="del" title="Excluir">Excluir</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+$('#plist').addEventListener('click', async e => {
+  const card = e.target.closest('.pcard'); if (!card) return;
+  const act = e.target.closest('[data-pact]')?.dataset.pact || 'open';
+  const p = await idb.get('projects', card.dataset.pid); if (!p) return;
+  if (act === 'del') {
+    if (!confirm(`Excluir a lista “${p.name}”? (A playlist no YouTube não será apagada.)`)) return;
+    await idb.del('projects', p.id);
+    if (project?.id === p.id) { project = null; await setSet('currentId', ''); resetInput(); }
+    renderLists(); return;
+  }
+  if (act === 'dup') {
+    const c = JSON.parse(JSON.stringify(p)); c.id = uid(); c.name = p.name + ' (cópia)'; c.created = c.updated = Date.now(); c.playlists = [];
+    c.items.forEach(i => i.id = uid());
+    await idb.put('projects', c); renderLists(); toast('Lista duplicada.', 'ok'); return;
+  }
+  project = p; delete project._editing; await setSet('currentId', p.id);
+  $('#inputCard').hidden = true; $('#buscaTitle').textContent = 'Resultado da busca'; $('#filter').value = '';
+  renderProject(); showView('busca');
+});
+$('#listFilter').addEventListener('input', renderLists);
+$('#btnNew').onclick = () => { newSearch(); showView('busca'); };
+
+function resetInput() {
+  $('#projName').value = ''; $('#listInput').value = ''; countLines();
+  $('#inputCard').hidden = false; $('#resultsWrap').hidden = true;
+  $('#buscaTitle').textContent = 'Nova busca';
+  $('#btnSearch').lastChild.textContent = 'Buscar no YouTube';
+}
+async function newSearch() {
+  if (searching) return toast('Aguarde a busca atual terminar (ou clique em Parar).', 'err');
+  project = null; await setSet('currentId', ''); resetInput();
+  setTimeout(() => $('#listInput').focus(), 50);
+}
+
+/* =========================================================
+   Navigation / modals
+   ========================================================= */
+function showView(v) {
+  $$('.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + v));
+  $$('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  if (v === 'listas') renderLists();
+  if (v === 'config') renderQuota();
+  window.scrollTo({top: 0});
+  history.replaceState(null, '', '#' + v);
+}
+$$('.nav-btn').forEach(b => b.onclick = () => {
+  if (b.dataset.view === 'busca' && $('#view-busca').classList.contains('active') && project && !searching) { newSearch(); return; }
+  showView(b.dataset.view);
+});
+function openModal(id) { $('#' + id).classList.add('open'); document.body.style.overflow = 'hidden'; }
+function closeModal(id) {
+  $('#' + id).classList.remove('open'); document.body.style.overflow = '';
+  if (id === 'mPlayer') $('#playerBox').innerHTML = '';
+  if (id === 'mPublish') $('#pubGo').onclick = pubHandler;
+}
+$$('.modal').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m || e.target.closest('[data-close]')) closeModal(m.id); });
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') $$('.modal.open').forEach(m => closeModal(m.id));
+  if ($('#mPlayer').classList.contains('open') && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) {
+    if (e.key === 'ArrowRight') stepPlayer(1);
+    if (e.key === 'ArrowLeft') stepPlayer(-1);
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && document.activeElement === $('#listInput')) startSearch();
+});
+
+/* =========================================================
+   Input
+   ========================================================= */
+function countLines() {
+  const n = parseList($('#listInput').value, $('#order').value).length;
+  $('#lineCount').textContent = `${n} música${n === 1 ? '' : 's'}` + (n ? ` · custo máx. ≈ ${(n * 100).toLocaleString('pt-BR')} unidades (cache reduz)` : '');
+}
+$('#listInput').addEventListener('input', countLines);
+$('#order').addEventListener('change', countLines);
+$('#btnSearch').onclick = startSearch;
+$('#btnClear').onclick = () => { if (project?._editing) { delete project._editing; $('#inputCard').hidden = true; $('#btnSearch').lastChild.textContent = 'Buscar no YouTube'; return; } $('#listInput').value = ''; $('#projName').value = ''; countLines(); };
+
+/* =========================================================
+   Config
+   ========================================================= */
+$$('[data-eye]').forEach(b => b.onclick = () => { const i = $('#' + b.dataset.eye); i.type = i.type === 'password' ? 'text' : 'password'; });
+$('#btnSaveCfg').onclick = async () => {
+  apiKey = $('#cfgKey').value.trim(); clientId = $('#cfgClient').value.trim();
+  await setSet('apiKey', apiKey); await setSet('clientId', clientId);
+  toast('Configurações salvas.', 'ok');
+};
+$('#btnTestKey').onclick = async () => {
+  apiKey = $('#cfgKey').value.trim();
+  if (!apiKey) return toast('Cole a API Key primeiro.', 'err');
+  try { await yt('videos', {part: 'id', id: 'jNQXAC9IVRw'}); await addQuota(1); await setSet('apiKey', apiKey); toast('API Key funcionando! ✔', 'ok'); }
+  catch (e) { toast(e.message, 'err'); }
+};
+$('#btnLogin').onclick = async () => {
+  clientId = $('#cfgClient').value.trim(); await setSet('clientId', clientId);
+  try { await getToken(true); toast('Canal conectado: ' + channelName, 'ok'); } catch (e) { toast(e.message, 'err'); }
+};
+$('#btnLogout').onclick = () => {
+  if (accessToken && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(accessToken, () => {});
+  accessToken = ''; tokenExp = 0; channelName = ''; renderAccount(); toast('Canal desconectado.');
+};
+$('#btnExport').onclick = async () => {
+  const data = {app: 'musiclink', v: 1, exported: Date.now(), projects: await idb.all('projects'), settings: {apiKey, clientId}};
+  download(`musiclink-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data), 'application/json');
+};
+$('#btnImport').onclick = () => $('#fileImport').click();
+$('#fileImport').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (d.app !== 'musiclink' || !Array.isArray(d.projects)) throw new Error('Arquivo de backup inválido.');
+    for (const p of d.projects) await idb.put('projects', p);
+    if (d.settings?.apiKey && !apiKey) { apiKey = d.settings.apiKey; await setSet('apiKey', apiKey); $('#cfgKey').value = apiKey; }
+    if (d.settings?.clientId && !clientId) { clientId = d.settings.clientId; await setSet('clientId', clientId); $('#cfgClient').value = clientId; }
+    toast(`${d.projects.length} listas importadas.`, 'ok'); renderLists();
+  } catch (err) { toast(err.message, 'err'); }
+  e.target.value = '';
+};
+$('#btnClearCache').onclick = async () => { await idb.clear('cache'); toast('Cache de buscas limpo.', 'ok'); };
+$('#btnWipe').onclick = async () => {
+  if (!confirm('Apagar TODAS as listas, configurações e cache deste aparelho?')) return;
+  await idb.clear('projects'); await idb.clear('settings'); await idb.clear('cache');
+  apiKey = clientId = ''; $('#cfgKey').value = ''; $('#cfgClient').value = '';
+  project = null; resetInput(); renderQuota(); toast('Dados apagados.');
+};
+
+/* =========================================================
+   PWA (manifest gerado + ícone)
+   ========================================================= */
+function setupPWA() {
+  try {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 512;
+    const g = cv.getContext('2d');
+    const gr = g.createLinearGradient(0, 0, 512, 512); gr.addColorStop(0, '#ff3b3b'); gr.addColorStop(1, '#ff6a3d');
+    g.fillStyle = gr; g.beginPath(); g.roundRect ? g.roundRect(0, 0, 512, 512, 110) : g.rect(0, 0, 512, 512); g.fill();
+    g.fillStyle = '#fff'; g.save(); g.translate(96, 72); g.scale(14, 14);
+    g.fill(new Path2D('M9 3v10.6A3.5 3.5 0 1 0 11 17V8l8-1.7v5.3A3.5 3.5 0 1 0 21 15V1z')); g.restore();
+    const icon = cv.toDataURL('image/png');
+    $('#appleIcon').href = icon;
+    const base = location.href.split('#')[0];
+    const manifest = {name: 'MusicLink — Busca de músicas', short_name: 'MusicLink', start_url: base, scope: base.replace(/[^/]*$/, ''), display: 'standalone', orientation: 'any',
+      background_color: '#0e1014', theme_color: '#0e1014', icons: [{src: icon, sizes: '512x512', type: 'image/png', purpose: 'any maskable'}]};
+    const l = document.createElement('link'); l.rel = 'manifest';
+    l.href = 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify(manifest));
+    document.head.appendChild(l);
+  } catch {}
+  // Se existir um sw.js ao lado do HTML, ele é registrado (opcional, para funcionar offline)
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    fetch('sw.js', {method: 'HEAD'}).then(r => { if (r.ok) navigator.serviceWorker.register('sw.js'); }).catch(() => {});
+  }
+}
+
+/* =========================================================
+   Init
+   ========================================================= */
+(async function init() {
+  try { db = await openDB(); }
+  catch { toast('Este navegador bloqueou o IndexedDB (modo anônimo?). Os dados não serão salvos.', 'err'); return; }
+  apiKey = await getSet('apiKey', ''); clientId = await getSet('clientId', '');
+  $('#cfgKey').value = apiKey; $('#cfgClient').value = clientId;
+  $('#originTxt').textContent = location.protocol === 'file:' ? 'file:// (abra por um endereço http/https para usar o login)' : location.origin;
+  setupPWA(); renderQuota(); renderAccount(); countLines();
+  const cur = await getSet('currentId', '');
+  if (cur) { const p = await idb.get('projects', cur); if (p) { project = p; $('#inputCard').hidden = true; $('#buscaTitle').textContent = 'Resultado da busca'; renderProject(); } }
+  const h = location.hash.slice(1);
+  if (['busca', 'listas', 'config'].includes(h)) showView(h);
+  else if (!apiKey) showView('config');
+  setInterval(renderAccount, 60000);
+})();
+</script>
+</body>
+</html>
