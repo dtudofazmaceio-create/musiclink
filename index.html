@@ -360,6 +360,7 @@ kbd{font-size:11px;background:var(--bg2);border:1px solid var(--line);border-rad
           <ul class="steps" style="margin-top:10px">
             <li>Cada música buscada: <b>100</b> unidades (≈ 100 músicas/dia). Buscas repetidas usam o cache e não gastam nada.</li>
             <li>Criar uma playlist: <b>50</b> + <b>50 por música</b> adicionada.</li>
+            <li>Atualizar uma playlist existente: <b>~1</b> para ler + <b>50 por música</b> adicionada, removida ou reordenada.</li>
           </ul>
           <div class="quota" style="margin-top:14px"><span id="quotaTxt2"></span><div class="qbar"><i id="quotaBar2"></i></div></div>
           <p class="hint">O contador é uma estimativa deste aparelho. O valor oficial fica no Google Cloud Console → APIs → Cotas.</p>
@@ -436,6 +437,20 @@ kbd{font-size:11px;background:var(--bg2);border:1px solid var(--line);border-rad
 <div class="modal" id="mPublish">
   <div class="mbox">
     <div class="mhead"><div><h3>Publicar playlist no YouTube</h3><div class="sub" id="pubSub"></div></div><button class="xbtn" data-close>&times;</button></div>
+    <div class="field"><div class="radio-row">
+      <label><input type="radio" name="pubMode" value="new" checked>Criar nova playlist</label>
+      <label><input type="radio" name="pubMode" value="update">Atualizar playlist existente</label>
+    </div></div>
+    <div id="pubUpdBox" hidden>
+      <div class="field"><label>Link ou ID da playlist a atualizar
+        <div class="inrow"><input id="pubPlId" placeholder="https://www.youtube.com/playlist?list=…"><button class="btn" id="pubLoadMine" type="button">Meu canal</button></div>
+      </label>
+        <select id="pubPlSel" hidden style="margin-top:8px;width:100%"></select>
+        <div class="hint">Só o que mudou gasta cota: músicas novas são adicionadas, as que saíram da lista são removidas e a ordem é corrigida (50 por operação). Ler a playlist custa ~1 por 50 músicas.</div>
+      </div>
+      <label style="flex-direction:row;align-items:center;gap:8px;display:flex;margin:4px 0 8px"><input type="checkbox" id="pubFixOrder" checked>Corrigir a ordem para ficar igual à lista</label>
+      <label style="flex-direction:row;align-items:center;gap:8px;display:flex;margin:0 0 8px"><input type="checkbox" id="pubUpdMeta">Atualizar também título, descrição e visibilidade (+50)</label>
+    </div>
     <div class="field"><label>Título da playlist<input id="pubTitle" maxlength="150"></label></div>
     <div class="field"><label>Descrição<textarea id="pubDesc" style="min-height:80px;font-family:inherit"></textarea></label></div>
     <div class="field"><label>Visibilidade</label>
@@ -843,7 +858,7 @@ function renderStats() {
 }
 function renderPlInfo() {
   const pls = project?.playlists || [];
-  $('#plInfo').innerHTML = pls.length ? pls.map(p => `<div class="plinfo" style="margin-top:6px">✅ Playlist publicada em ${fmtDate(p.created)} (${p.count} músicas): <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a><button class="btn sm ghost" data-copy="${esc(p.url)}">Copiar</button></div>`).join('') : '';
+  $('#plInfo').innerHTML = pls.length ? pls.map(p => `<div class="plinfo" style="margin-top:6px">✅ Playlist ${p.updated ? 'atualizada em ' + fmtDate(p.updated) : 'publicada em ' + fmtDate(p.created)} (${p.count} músicas): <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a><button class="btn sm ghost" data-copy="${esc(p.url)}">Copiar</button></div>`).join('') : '';
 }
 function renderProject() {
   if (!project) { $('#resultsWrap').hidden = true; $('#inputCard').hidden = false; return; }
@@ -1005,12 +1020,184 @@ function openPublish() {
   const cost = 50 + vids.length * 50;
   $('#pubCost').innerHTML = `Custo estimado: <b>${cost.toLocaleString('pt-BR')}</b> unidades de cota.` + (cost > 10000 ? ' <span style="color:var(--err)">Acima do limite diário — o restante pode ser concluído amanhã.</span>' : '');
   $('#pubProg').hidden = true; $('#pubLog').hidden = true; $('#pubLog').innerHTML = '';
-  $('#pubGo').disabled = false; $('#pubGo').textContent = (accessToken && Date.now() < tokenExp) ? `Publicar no canal “${channelName}”` : 'Entrar com Google e publicar';
+  const last = project.playlists?.[0];
+  $('#pubPlId').value = last ? last.url : '';
+  $('#pubPlSel').hidden = true;
+  document.querySelector(`input[name=pubMode][value=${last ? 'update' : 'new'}]`).checked = true;
+  pubPlan = null;
+  setPubMode();
   openModal('mPublish');
 }
+let pubPlan = null;
+const pubMode = () => document.querySelector('input[name=pubMode]:checked').value;
+function setPubMode() {
+  const upd = pubMode() === 'update';
+  $('#pubUpdBox').hidden = !upd;
+  const vids = project.items.filter(i => i.include).map(chosen).filter(Boolean);
+  const logged = accessToken && Date.now() < tokenExp;
+  pubPlan = null; $('#pubGo').disabled = false; $('#pubGo').onclick = pubHandler;
+  if (upd) {
+    $('#pubCost').innerHTML = 'Clique em “Verificar mudanças” para ver o que vai mudar e quanto de cota será usado — nada é alterado antes da sua confirmação.';
+    $('#pubGo').textContent = logged ? 'Verificar mudanças' : 'Entrar com Google e verificar mudanças';
+  } else {
+    const cost = 50 + vids.length * 50;
+    $('#pubCost').innerHTML = `Custo estimado: <b>${cost.toLocaleString('pt-BR')}</b> unidades de cota.` + (cost > 10000 ? ' <span style="color:var(--err)">Acima do limite diário — o restante pode ser concluído amanhã.</span>' : '');
+    $('#pubGo').textContent = logged ? `Publicar no canal “${channelName}”` : 'Entrar com Google e publicar';
+  }
+}
+$$('input[name=pubMode]').forEach(r => r.addEventListener('change', setPubMode));
+['#pubPlId', '#pubFixOrder', '#pubUpdMeta'].forEach(s => $(s).addEventListener('change', () => { if (pubMode() === 'update') setPubMode(); }));
+function playlistIdFrom(s) {
+  s = String(s || '').trim();
+  const m = s.match(/[?&]list=([\w-]+)/); if (m) return m[1];
+  return /^[\w-]{10,}$/.test(s) ? s : '';
+}
+$('#pubLoadMine').onclick = async () => {
+  const b = $('#pubLoadMine'); b.disabled = true;
+  try {
+    await getToken();
+    const all = []; let pageToken = '';
+    do {
+      const j = await yt('playlists', {part: 'snippet,contentDetails', mine: 'true', maxResults: 50, ...(pageToken ? {pageToken} : {})}, {auth: true});
+      await addQuota(1);
+      all.push(...(j.items || [])); pageToken = j.nextPageToken || '';
+    } while (pageToken && all.length < 500);
+    if (!all.length) { toast('Seu canal ainda não tem playlists.', 'err'); return; }
+    const sel = $('#pubPlSel'); const cur = playlistIdFrom($('#pubPlId').value);
+    sel.innerHTML = '<option value="">— escolha uma playlist —</option>' + all.map(p => `<option value="${esc(p.id)}" ${p.id === cur ? 'selected' : ''}>${esc(p.snippet.title)} (${p.contentDetails?.itemCount ?? '?'} vídeos)</option>`).join('');
+    sel.hidden = false;
+  } catch (e) { toast(e.message, 'err'); }
+  finally { b.disabled = false; }
+};
+$('#pubPlSel').onchange = e => { if (e.target.value) { $('#pubPlId').value = 'https://www.youtube.com/playlist?list=' + e.target.value; setPubMode(); } };
+
+/* Plan the minimum changes to turn the playlist into the list */
+async function planSync(plId, fixOrder) {
+  const items = []; let pageToken = '';
+  do {
+    const j = await yt('playlistItems', {part: 'snippet', playlistId: plId, maxResults: 50, ...(pageToken ? {pageToken} : {})}, {auth: true});
+    await addQuota(1);
+    items.push(...(j.items || [])); pageToken = j.nextPageToken || '';
+  } while (pageToken);
+  items.sort((a, b) => (a.snippet.position ?? 0) - (b.snippet.position ?? 0));
+  const entries = project.items.filter(i => i.include && chosen(i));
+  // Occurrence-aware keys so repeated videos are handled correctly
+  const keyed = (vid, cnt) => { cnt[vid] = (cnt[vid] || 0) + 1; return vid + '#' + cnt[vid]; };
+  const dc = {}; const desired = entries.map(it => ({key: keyed(chosen(it).id, dc), vid: chosen(it).id, song: it.song}));
+  const desiredIdx = new Map(desired.map((d, i) => [d.key, i]));
+  const ec = {}; const existing = items.map(x => ({key: keyed(x.snippet.resourceId?.videoId, ec), vid: x.snippet.resourceId?.videoId, itemId: x.id, title: x.snippet.title}));
+  const toDelete = existing.filter(e => !desiredIdx.has(e.key));
+  const kept = existing.filter(e => desiredIdx.has(e.key));
+  const existingByKey = new Map(kept.map(e => [e.key, e]));
+  // Longest increasing subsequence of kept items (by desired index) = items that can stay where they are
+  const seq = kept.map(e => desiredIdx.get(e.key));
+  const stay = new Set();
+  if (fixOrder) {
+    const tails = [], prev = new Array(seq.length), tailIdx = [];
+    seq.forEach((v, i) => {
+      let lo = 0, hi = tails.length;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (tails[m] < v) lo = m + 1; else hi = m; }
+      tails[lo] = v; tailIdx[lo] = i; prev[i] = lo ? tailIdx[lo - 1] : -1;
+    });
+    for (let i = tailIdx[tails.length - 1] ?? -1; i >= 0; i = prev[i]) stay.add(kept[i].key);
+  } else kept.forEach(e => stay.add(e.key));
+  const toAdd = desired.filter(d => !existingByKey.has(d.key));
+  const toMove = fixOrder ? kept.filter(e => !stay.has(e.key)) : [];
+  return {plId, items, desired, existingByKey, stay, toDelete, toAdd, toMove, fixOrder};
+}
+
+async function runSync(plan) {
+  const {plId, desired, existingByKey, stay, toDelete, fixOrder} = plan;
+  const total = toDelete.length + plan.toAdd.length + plan.toMove.length; let k = 0, ok = 0, fail = 0;
+  const step = () => { k++; $('#pubBar').style.width = (k / Math.max(1, total) * 100) + '%'; $('#pubTxt').textContent = `${k} / ${total}`; };
+  const call = async (fn, label) => {
+    for (let tries = 1; tries <= 4; tries++) {
+      try { if (Date.now() > tokenExp - 60000) await getToken(); await fn(); await addQuota(50); ok++; return true; }
+      catch (e) {
+        if (e.reason === 'quotaExceeded') throw Object.assign(new Error('Cota esgotada. Rode “Atualizar playlist existente” de novo amanhã — ela continua de onde parou.'), {quota: true});
+        if (e.status === 409 || e.status >= 500 || e.network) { await sleep(800 * tries); continue; }
+        plog(`✗ ${label}: ${e.message}`, 'e'); fail++; return false;
+      }
+    }
+    plog(`✗ ${label}: YouTube não respondeu`, 'e'); fail++; return false;
+  };
+  // 1) deletions
+  for (const d of toDelete) { step(); if (await call(() => yt('playlistItems', {id: d.itemId}, {method: 'DELETE', auth: true}), 'remover ' + d.title)) plog('− ' + d.title); await sleep(120); }
+  // 2) build the simulated current order (after deletions)
+  const keyByItem = new Map([...existingByKey.values()].map(v => [v.itemId, v.key]));
+  const cur = plan.items.map(x => keyByItem.get(x.id)).filter(Boolean);
+  // 3) walk the desired order: place each new / out-of-order item right after its predecessor
+  for (let i = 0; i < desired.length; i++) {
+    const d = desired[i];
+    const has = existingByKey.get(d.key);
+    if (has && (stay.has(d.key) || !fixOrder)) continue;
+    const from = cur.indexOf(d.key); if (from >= 0) cur.splice(from, 1);
+    let position;
+    if (fixOrder) { let p = -1; for (let j = i - 1; j >= 0 && p < 0; j--) p = cur.indexOf(desired[j].key); position = p + 1; }
+    step();
+    const snippet = {playlistId: plId, resourceId: {kind: 'youtube#video', videoId: d.vid}};
+    if (position !== undefined) snippet.position = position;
+    let done;
+    if (has) done = await call(() => yt('playlistItems', {part: 'snippet'}, {method: 'PUT', auth: true, body: {id: has.itemId, snippet}}), 'mover ' + d.song);
+    else done = await call(async () => { const r = await yt('playlistItems', {part: 'snippet'}, {method: 'POST', auth: true, body: {snippet}}); existingByKey.set(d.key, {key: d.key, vid: d.vid, itemId: r.id}); }, 'adicionar ' + d.song);
+    if (done) { plog((has ? '↕ ' : '+ ') + d.song); cur.splice(position !== undefined ? position : cur.length, 0, d.key); }
+    else if (from >= 0) cur.splice(from, 0, d.key);
+    await sleep(120);
+  }
+  return {ok, fail};
+}
+
+async function publishUpdate() {
+  const go = $('#pubGo'); go.disabled = true;
+  try {
+    const plId = playlistIdFrom($('#pubPlId').value);
+    if (!plId) throw new Error('Cole o link da playlist (…playlist?list=…) ou escolha uma em “Meu canal”.');
+    go.textContent = 'Aguardando login…';
+    await getToken();
+    $('#pubLog').innerHTML = '';
+    if (!pubPlan || pubPlan.plId !== plId) {
+      go.textContent = 'Lendo a playlist…';
+      plog('Lendo a playlist atual…');
+      const plan = await planSync(plId, $('#pubFixOrder').checked);
+      const meta = $('#pubUpdMeta').checked ? 1 : 0;
+      const ops = plan.toDelete.length + plan.toAdd.length + plan.toMove.length;
+      const cost = (ops + meta) * 50;
+      plog(`Playlist tem ${plan.items.length} vídeos; a lista tem ${plan.desired.length}.`);
+      plog(`+ ${plan.toAdd.length} para adicionar · − ${plan.toDelete.length} para remover · ↕ ${plan.toMove.length} para reordenar`, 'o');
+      if (!ops && !meta) { plog('A playlist já está igual à lista. Nada a fazer ✔', 'o'); go.disabled = false; go.textContent = 'Verificar de novo'; return; }
+      $('#pubCost').innerHTML = `Custo para aplicar: <b>${cost.toLocaleString('pt-BR')}</b> unidades de cota` + (pubPlanCostNew() > cost ? ` (criar uma nova custaria ${pubPlanCostNew().toLocaleString('pt-BR')}).` : '.');
+      pubPlan = plan;
+      go.disabled = false; go.textContent = `Aplicar mudanças (${cost.toLocaleString('pt-BR')} de cota)`;
+      return;
+    }
+    const plan = pubPlan; pubPlan = null;
+    go.textContent = 'Atualizando…'; $('#pubProg').hidden = false;
+    if ($('#pubUpdMeta').checked) {
+      await yt('playlists', {part: 'snippet,status'}, {method: 'PUT', auth: true, body: {id: plId, snippet: {title: $('#pubTitle').value.trim() || project.name, description: $('#pubDesc').value, defaultLanguage: 'pt-BR'}, status: {privacyStatus: document.querySelector('input[name=priv]:checked').value}}});
+      await addQuota(50); plog('Título/descrição atualizados.');
+    }
+    const {ok, fail} = await runSync(plan);
+    const url = 'https://www.youtube.com/playlist?list=' + plId;
+    project.playlists = project.playlists || [];
+    const prev = project.playlists.find(p => p.id === plId);
+    const rec = {id: plId, url, title: prev?.title || $('#pubTitle').value.trim() || project.name, privacy: prev?.privacy || '', count: plan.desired.length, created: prev?.created || Date.now(), updated: Date.now()};
+    project.playlists = [rec, ...project.playlists.filter(p => p.id !== plId)];
+    await saveProject(); renderPlInfo(); renderLists();
+    plog(`Concluído: ${ok} alterações${fail ? `, ${fail} com erro` : ''}.`, 'o');
+    toast('Playlist atualizada!', 'ok');
+    go.disabled = false; go.textContent = 'Abrir playlist no YouTube';
+    go.onclick = () => window.open(url, '_blank');
+  } catch (e) {
+    pubPlan = null;
+    plog(e.message, 'e'); toast(e.message, 'err');
+    go.disabled = false; go.textContent = 'Tentar novamente';
+  }
+}
+function pubPlanCostNew() { return 50 + project.items.filter(i => i.include && chosen(i)).length * 50; }
 function plog(msg, cls = '') { const l = $('#pubLog'); l.hidden = false; const d = document.createElement('div'); d.className = cls; d.textContent = msg; l.appendChild(d); l.scrollTop = l.scrollHeight; }
 
 $('#pubGo').onclick = async () => {
+  if (pubMode() === 'update') return publishUpdate();
   const go = $('#pubGo'); go.disabled = true;
   const title = $('#pubTitle').value.trim() || project.name;
   const description = $('#pubDesc').value;
