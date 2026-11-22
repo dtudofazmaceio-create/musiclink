@@ -129,14 +129,29 @@ kbd{font-size:11px;background:var(--bg2);border:1px solid var(--line);border-rad
 @keyframes sp{to{transform:rotate(360deg)}}
 
 /* Lists */
-.plist{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.pcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:10px;cursor:pointer;transition:border .15s}
-.pcard:hover{border-color:#3a4258}
-.pcard h4{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pcard .meta{font-size:12.5px;color:var(--muted)}
-.pcard .thumbs{display:flex;gap:4px;height:42px}
-.pcard .thumbs img{height:42px;aspect-ratio:16/9;object-fit:cover;border-radius:5px}
-.pcard .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ltools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.search{position:relative;flex:1;min-width:220px;max-width:420px}
+.search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:17px;height:17px;fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round}
+.search input{padding-left:38px!important}
+.chips{display:flex;gap:6px}
+.chip{border:1px solid var(--line);background:transparent;color:var(--muted);padding:8px 13px;border-radius:20px;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap}
+.chip i{font-style:normal;opacity:.7;margin-left:4px;font-weight:500}
+.chip:hover{color:var(--txt)}.chip.active{background:var(--card2);color:var(--txt);border-color:#3a4258}
+#listSort{width:auto;margin-left:auto;padding:9px 12px;font-size:13.5px}
+.plist{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
+.pcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;cursor:pointer;transition:border .15s,transform .15s,box-shadow .15s}
+.pcard:hover{border-color:#3a4258;transform:translateY(-2px);box-shadow:0 10px 28px rgba(0,0,0,.35)}
+.cover{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:2px;aspect-ratio:16/5;background:var(--bg2)}
+.cover img,.cover span{width:100%;height:100%;object-fit:cover;display:block;background:var(--card2)}
+.cover::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.5),transparent 55%);pointer-events:none}
+.cover .pill{position:absolute;top:10px;left:10px;z-index:1;background:rgba(14,16,20,.8)}
+.pbody{padding:14px 16px 16px;display:flex;flex-direction:column;gap:10px;flex:1}
+.pcard h4{font-size:16px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.pcard .meta{font-size:12.5px;color:var(--muted);display:flex;gap:6px 10px;flex-wrap:wrap;align-items:center}
+.pbar{height:5px;border-radius:5px;background:var(--line);overflow:hidden}.pbar i{display:block;height:100%;background:var(--ok)}.pbar.warn i{background:var(--warn)}
+.pfoot{display:flex;gap:6px;margin-top:auto;padding-top:4px}
+.pfoot .btn.primary{flex:1}
+.nav-btn.active{box-shadow:inset 3px 0 0 var(--accent)}
 .empty-st{text-align:center;color:var(--muted);padding:50px 20px}
 .empty-st svg{width:46px;height:46px;stroke:var(--line);fill:none;stroke-width:1.5;margin-bottom:10px}
 
@@ -224,6 +239,10 @@ kbd{font-size:11px;background:var(--bg2);border:1px solid var(--line);border-rad
   .alt img{width:96px}
   .toasts{left:12px;right:12px;bottom:calc(84px + var(--safe-b));align-items:center}
   .filterbar input{max-width:none}
+  .search{max-width:none;flex-basis:100%}
+  .chips{order:3;width:100%;overflow-x:auto}
+  #listSort{margin-left:0}
+  .plist{grid-template-columns:1fr}
 }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -322,10 +341,14 @@ kbd{font-size:11px;background:var(--bg2);border:1px solid var(--line);border-rad
     <!-- ============ LISTAS ============ -->
     <section class="view" id="view-listas">
       <div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
-        <div><h1>Minhas listas</h1><p>Todas as buscas ficam salvas neste aparelho (IndexedDB).</p></div>
+        <div><h1>Minhas listas</h1><p>Suas listas ficam salvas neste aparelho — abra uma para ver, ouvir ou publicar.</p></div>
         <button class="btn primary" id="btnNew"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova busca</button>
       </div>
-      <div class="filterbar"><input id="listFilter" placeholder="Procurar lista ou cliente…"></div>
+      <div class="ltools">
+        <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="listFilter" placeholder="Procurar lista, cliente ou música…"></div>
+        <div class="chips" id="listChips"><button class="chip active" data-chip="all">Todas<i></i></button><button class="chip" data-chip="pub">Publicadas<i></i></button><button class="chip" data-chip="draft">Não publicadas<i></i></button></div>
+        <select id="listSort"><option value="rec">Mais recentes</option><option value="az">Nome (A–Z)</option><option value="big">Mais músicas</option></select>
+      </div>
       <div class="plist" id="plist"></div>
     </section>
 
@@ -1465,34 +1488,54 @@ const pubHandler = $('#pubGo').onclick;
 /* =========================================================
    Lists view
    ========================================================= */
+let listChip = 'all';
+const ago = t => {
+  const d = (Date.now() - t) / 1000;
+  if (d > 30 * 86400) return new Date(t).toLocaleDateString('pt-BR');
+  const rtf = new Intl.RelativeTimeFormat('pt-BR', {numeric: 'auto'});
+  for (const [u, k] of [['day', 86400], ['hour', 3600], ['minute', 60]]) if (d >= k) return rtf.format(-Math.floor(d / k), u);
+  return 'agora';
+};
+const IC = {
+  dup: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>',
+  del: '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>',
+  yt: '<svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>',
+};
 async function renderLists() {
-  const all = (await idb.all('projects')).sort((a, b) => b.updated - a.updated);
-  const f = norm($('#listFilter').value);
-  const list = all.filter(p => !f || norm(p.name + ' ' + p.items.map(i => i.q).join(' ')).includes(f));
+  const all = await idb.all('projects');
+  const isPub = p => !!p.playlists?.length;
+  $$('#listChips .chip').forEach(c => { const k = c.dataset.chip; c.classList.toggle('active', k === listChip); c.querySelector('i').textContent = k === 'all' ? all.length : all.filter(p => (k === 'pub') === isPub(p)).length; });
+  const f = norm($('#listFilter').value), sort = $('#listSort').value;
+  const list = all.filter(p => (listChip === 'all' || (listChip === 'pub') === isPub(p)) && (!f || norm(p.name + ' ' + p.items.map(i => i.q).join(' ')).includes(f)))
+    .sort((a, b) => sort === 'az' ? a.name.localeCompare(b.name, 'pt-BR') : sort === 'big' ? b.items.length - a.items.length : b.updated - a.updated);
   if (!list.length) {
-    $('#plist').innerHTML = `<div class="empty-st" style="grid-column:1/-1"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><div>${all.length ? 'Nenhuma lista encontrada.' : 'Nenhuma lista ainda. Faça sua primeira busca!'}</div></div>`;
+    $('#plist').innerHTML = `<div class="empty-st" style="grid-column:1/-1"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><div>${all.length ? 'Nenhuma lista com esses filtros.' : 'Nenhuma lista ainda. Clique em “Nova busca” para começar!'}</div></div>`;
     return;
   }
   $('#plist').innerHTML = list.map(p => {
-    const ok = p.items.filter(i => chosen(i)).length;
-    const th = p.items.map(chosen).filter(Boolean).slice(0, 5).map(c => `<img loading="lazy" src="${esc(c.thumb)}" alt="">`).join('');
-    const pub = p.playlists?.length ? `<span class="pill ok">Publicada</span>` : '';
+    const n = p.items.length, ok = p.items.filter(i => chosen(i)).length, miss = n - ok;
+    const th = p.items.map(chosen).filter(Boolean).slice(0, 4).map(c => `<img loading="lazy" src="${esc(c.thumb)}" alt="">`);
+    while (th.length < 4) th.push('<span></span>');
+    const pl = p.playlists?.[0];
     return `<div class="pcard" data-pid="${p.id}">
-      <div class="row"><h4>${esc(p.name)}</h4>${pub}</div>
-      <div class="thumbs">${th}</div>
-      <div class="meta">${p.items.length} músicas · ${ok} encontradas · ${fmtDate(p.updated)}</div>
-      <div class="row">
-        <button class="btn sm" data-pact="open">Abrir</button>
-        <div style="display:flex;gap:6px">
-          <button class="btn sm ghost" data-pact="dup" title="Duplicar">Duplicar</button>
-          <button class="btn sm ghost danger" data-pact="del" title="Excluir">Excluir</button>
+      <div class="cover">${th.join('')}${pl ? '<span class="pill ok">● Publicada</span>' : '<span class="pill">Rascunho</span>'}</div>
+      <div class="pbody">
+        <h4 title="${esc(p.name)}">${esc(p.name)}</h4>
+        <div class="meta"><b style="color:var(--txt)">${n} músicas</b><span>·</span><span>${miss ? `${ok} com vídeo` : 'todas com vídeo'}</span><span>·</span><span title="${fmtDate(p.updated)}">${ago(p.updated)}</span></div>
+        <div class="pbar ${miss ? 'warn' : ''}" title="${ok} de ${n} com vídeo"><i style="width:${n ? ok / n * 100 : 0}%"></i></div>
+        ${miss ? `<div class="meta" style="color:var(--warn)">⚠ ${miss} sem vídeo — abra para revisar</div>` : ''}
+        <div class="pfoot">
+          <button class="btn sm primary" data-pact="open">Abrir</button>
+          ${pl ? `<a class="btn sm icon" href="${esc(pl.url)}" target="_blank" rel="noopener" title="Abrir playlist no YouTube">${IC.yt}</a>` : ''}
+          <button class="btn sm icon ghost" data-pact="dup" title="Duplicar lista">${IC.dup}</button>
+          <button class="btn sm icon ghost danger" data-pact="del" title="Excluir lista">${IC.del}</button>
         </div>
       </div>
     </div>`;
   }).join('');
 }
 $('#plist').addEventListener('click', async e => {
-  const card = e.target.closest('.pcard'); if (!card) return;
+  const card = e.target.closest('.pcard'); if (!card || e.target.closest('a')) return;
   const act = e.target.closest('[data-pact]')?.dataset.pact || 'open';
   const p = await idb.get('projects', card.dataset.pid); if (!p) return;
   if (act === 'del') {
@@ -1511,6 +1554,8 @@ $('#plist').addEventListener('click', async e => {
   renderProject(); showView('busca');
 });
 $('#listFilter').addEventListener('input', renderLists);
+$('#listSort').addEventListener('change', renderLists);
+$('#listChips').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; listChip = c.dataset.chip; renderLists(); });
 $('#btnNew').onclick = () => { newSearch(); showView('busca'); };
 
 function resetInput() {
