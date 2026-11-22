@@ -358,11 +358,14 @@ kbd{font-size:11px;background:var(--bg2);border:1px solid var(--line);border-rad
           <h3>Uso da cota (hoje)</h3>
           <p class="muted" style="font-size:14px">O YouTube libera <b>10.000 unidades por dia</b> gratuitamente. Renova por volta das 4h–5h (horário de Brasília).</p>
           <ul class="steps" style="margin-top:10px">
-            <li>Cada música buscada: <b>100</b> unidades (≈ 100 músicas/dia). Buscas repetidas usam o cache e não gastam nada.</li>
+            <li>Cada música <b>nova</b> buscada: <b>100</b> unidades (+ 1 a cada ~5 músicas para ler duração e popularidade em lote). Buscas repetidas — mesmo com artista/música em outra ordem — usam o cache (45 dias) e custam <b>0</b>.</li>
             <li>Criar uma playlist: <b>50</b> + <b>50 por música</b> adicionada.</li>
             <li>Atualizar uma playlist existente: <b>~1</b> para ler + <b>50 por música</b> adicionada, removida ou reordenada.</li>
           </ul>
           <div class="quota" style="margin-top:14px"><span id="quotaTxt2"></span><div class="qbar"><i id="quotaBar2"></i></div></div>
+          <p class="hint" id="quotaSaved"></p>
+          <div class="field" style="margin-top:12px"><label>Limite diário da sua cota (unidades)<input type="number" id="cfgQuota" min="1000" step="1000" placeholder="10000"></label></div>
+          <p class="hint">Se o Google aprovou um aumento de cota para o seu projeto, informe aqui. A busca só dispara chamadas novas se couberem nesse limite.</p>
           <p class="hint">O contador é uma estimativa deste aparelho. O valor oficial fica no Google Cloud Console → APIs → Cotas.</p>
         </div>
 
@@ -482,7 +485,14 @@ const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const stripMarks = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').normalize('NFC');
+const norm = s => stripMarks(s).replace(/[^\p{L}\p{M}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim();   // aceita qualquer alfabeto (kanji, cirílico…)
+const legacyNorm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); // chave do cache antigo
+// Chave de cache independente da ordem das palavras: "Evidências Chitãozinho" = "Chitãozinho Evidências"
+const cacheKey = q => { const t = [...new Set(norm(q).split(' ').filter(Boolean))].sort().join(' '); return t || String(q || '').trim().toLowerCase(); };
+const fmtN = n => Math.round(n).toLocaleString('pt-BR');
+const fmtViews = n => n >= 1e9 ? (n / 1e9).toFixed(1).replace('.', ',') + ' bi' : n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',').replace(',0', '') + ' mi' : n >= 1e3 ? Math.round(n / 1e3) + ' mil' : String(n);
+const durSec = iso => { const m = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(iso || ''); return m ? (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0) : 0; };
 const decodeHtml = (() => { const t = document.createElement('textarea'); return s => { t.innerHTML = s || ''; return t.value; }; })();
 const ytUrl = id => 'https://www.youtube.com/watch?v=' + id;
 const fmtDate = t => new Date(t).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
@@ -556,34 +566,69 @@ let searching = false, stopFlag = false;
 let playerIdx = -1, swapIdx = -1;
 
 /* =========================================================
-   Quota (estimate, per Pacific day)
+   Quota — contador local (dia do Pacífico), contabilizado AUTOMATICAMENTE em yt()
    ========================================================= */
+const QUOTA_COST = {search: {GET: 100}, videos: {GET: 1}, channels: {GET: 1}, playlists: {GET: 1, POST: 50, PUT: 50, DELETE: 50}, playlistItems: {GET: 1, POST: 50, PUT: 50, DELETE: 50}};
+const costOf = (path, method = 'GET') => QUOTA_COST[path]?.[method] ?? 1;
+let quotaLimit = 10000, quotaDayKey = '', quotaUsed = 0, savedTotal = 0, quotaTimer = null;
 function quotaDay() { return new Date().toLocaleDateString('en-CA', {timeZone: 'America/Los_Angeles'}); }
-async function addQuota(n) {
-  const k = 'quota-' + quotaDay();
-  await setSet(k, (await getSet(k, 0)) + n);
-  renderQuota();
+async function loadQuota() {
+  quotaDayKey = quotaDay();
+  quotaUsed = await getSet('quota-' + quotaDayKey, 0);
+  savedTotal = await getSet('saved-total', 0);
+  quotaLimit = +(await getSet('quotaLimit', 10000)) || 10000;
 }
-async function renderQuota() {
-  const used = await getSet('quota-' + quotaDay(), 0);
-  const pct = Math.min(100, used / 100);
-  const txt = `Cota hoje: ${used.toLocaleString('pt-BR')} / 10.000`;
-  $('#quotaTxt').textContent = txt; $('#quotaTxt2').textContent = txt + ` (≈ ${Math.max(0, Math.floor((10000 - used) / 100))} buscas restantes)`;
-  $('#quotaTxtM').textContent = `Cota: ${used.toLocaleString('pt-BR')}/10k`;
+function persistQuota(now = false) {
+  clearTimeout(quotaTimer);
+  const w = () => { if (db) { setSet('quota-' + quotaDayKey, quotaUsed); setSet('saved-total', savedTotal); } };
+  if (now) w(); else quotaTimer = setTimeout(w, 400);
+}
+function addQuota(n) {
+  const d = quotaDay(); if (d !== quotaDayKey) { quotaDayKey = d; quotaUsed = 0; }
+  quotaUsed += n; persistQuota(); renderQuota();
+}
+function addSaved(n = 1) { savedTotal += n; persistQuota(); renderQuota(); }
+const quotaRemaining = () => Math.max(0, quotaLimit - quotaUsed);
+function renderQuota() {
+  const pct = Math.min(100, quotaUsed / quotaLimit * 100);
+  const txt = `Cota hoje: ${fmtN(quotaUsed)} / ${fmtN(quotaLimit)}`;
+  $('#quotaTxt').textContent = txt;
+  $('#quotaTxt2').textContent = txt + ` (≈ ${Math.floor(quotaRemaining() / 100)} buscas novas restantes)`;
+  $('#quotaTxtM').textContent = `Cota: ${fmtN(quotaUsed)}`;
+  const sv = $('#quotaSaved');
+  if (sv) sv.textContent = savedTotal ? `Economia do cache: ${fmtN(savedTotal)} buscas evitadas (≈ ${fmtN(savedTotal * 100)} unidades de cota).` : 'Economia do cache: nenhuma busca repetida até agora.';
   [$('#quotaBar'), $('#quotaBar2')].forEach(b => { b.style.width = pct + '%'; b.style.background = pct > 85 ? 'var(--err)' : pct > 60 ? 'var(--warn)' : 'var(--ok)'; });
+}
+function costNote(cost) {
+  const rem = quotaRemaining();
+  return `Custo estimado: <b>${fmtN(cost)}</b> unidades de cota (restam ≈ ${fmtN(rem)} hoje).` + (cost > rem ? ' <span style="color:var(--err)">Acima do que resta hoje — publica até a cota acabar e o restante pode ser concluído depois em “Atualizar playlist existente”.</span>' : '');
 }
 
 /* =========================================================
    YouTube API
    ========================================================= */
+const REGION = 'BR';
+const MAX_RESULTS = 10;        // custo do search.list é fixo (100) — mais candidatos = melhor escolha, sem gasto extra
+const CONCURRENCY = 4;
+const LOW_CONF = 5;
+// Erros que invalidam TODA a busca (não adianta insistir)
+const FATAL_REASONS = new Set(['quotaExceeded', 'dailyLimitExceeded', 'keyInvalid', 'API_KEY_INVALID', 'accessNotConfigured', 'SERVICE_DISABLED', 'ipRefererBlocked', 'API_KEY_HTTP_REFERRER_BLOCKED', 'API_KEY_SERVICE_BLOCKED', 'insufficientPermissions', 'authError']);
+// Erros temporários: repetimos com espera progressiva
+const TRANSIENT_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded', 'backendError', 'internalError', 'serviceUnavailable']);
+
 function errMsg(reason, fallback, status) {
   const map = {
     quotaExceeded: 'A cota diária da API do YouTube acabou. Ela renova por volta das 4h–5h (Brasília). Os itens restantes ficam pendentes — clique em “Continuar busca” depois.',
     dailyLimitExceeded: 'Limite diário da API atingido. Tente novamente amanhã.',
     keyInvalid: 'API Key inválida. Confira em Configurações.',
     accessNotConfigured: 'A YouTube Data API v3 não está ativada no seu projeto do Google Cloud.',
+    SERVICE_DISABLED: 'A YouTube Data API v3 não está ativada no seu projeto do Google Cloud.',
     API_KEY_INVALID: 'API Key inválida. Confira em Configurações.',
     ipRefererBlocked: 'A API Key está restrita e bloqueou este endereço. Ajuste as restrições da chave no Google Cloud.',
+    API_KEY_HTTP_REFERRER_BLOCKED: 'A API Key está restrita e bloqueou este endereço. Ajuste as restrições da chave no Google Cloud.',
+    API_KEY_SERVICE_BLOCKED: 'A API Key não tem permissão para a YouTube Data API v3. Ajuste as restrições da chave.',
+    rateLimitExceeded: 'O YouTube pediu para ir mais devagar. Tente de novo em instantes.',
+    userRateLimitExceeded: 'O YouTube pediu para ir mais devagar. Tente de novo em instantes.',
     youtubeSignupRequired: 'Sua conta Google ainda não tem um canal no YouTube. Crie o canal e tente de novo.',
     channelNotFound: 'Canal não encontrado para esta conta.',
     insufficientPermissions: 'Permissão insuficiente. Desconecte e conecte o canal novamente autorizando o acesso ao YouTube.',
@@ -595,9 +640,12 @@ function errMsg(reason, fallback, status) {
   if (status === 401) return map.authError;
   return fallback || 'Erro na API do YouTube';
 }
-async function yt(path, params = {}, {method = 'GET', body, auth = false} = {}) {
+const backoff = n => Math.min(8000, 600 * 2 ** (n - 1)) + Math.random() * 300;
+
+// Único ponto de saída para o YouTube: custo contabilizado, timeout, retentativas (só leituras) e erros padronizados.
+async function yt(path, params = {}, {method = 'GET', body, auth = false, retries} = {}) {
   const url = new URL('https://www.googleapis.com/youtube/v3/' + path);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') url.searchParams.set(k, v); });
   const headers = {};
   if (auth || (!apiKey && accessToken)) {
     if (!accessToken) throw new Error('Conecte seu canal do YouTube primeiro.');
@@ -605,67 +653,200 @@ async function yt(path, params = {}, {method = 'GET', body, auth = false} = {}) 
   } else if (apiKey) url.searchParams.set('key', apiKey);
   else throw new Error('Cadastre sua API Key do YouTube em Configurações para fazer as buscas.');
   if (body) headers['Content-Type'] = 'application/json';
-  let r;
-  try { r = await fetch(url, {method, headers, body: body ? JSON.stringify(body) : undefined}); }
-  catch { const e = new Error('Sem conexão com a internet ou o YouTube não respondeu.'); e.network = true; throw e; }
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) {
+  // Escritas NÃO são repetidas aqui (poderiam duplicar itens); quem escreve decide.
+  const maxTry = 1 + (retries ?? (method === 'GET' ? 3 : 0));
+  for (let attempt = 1; ; attempt++) {
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 30000);
+    let r, j;
+    try {
+      r = await fetch(url, {method, headers, body: body ? JSON.stringify(body) : undefined, signal: ctl.signal});
+      j = await r.json().catch(() => ({}));
+    } catch {
+      clearTimeout(to);
+      if (attempt < maxTry) { await sleep(backoff(attempt)); continue; }
+      const e = new Error('Sem conexão com a internet ou o YouTube não respondeu.'); e.network = true; throw e;
+    }
+    clearTimeout(to);
+    if (r.ok) { addQuota(costOf(path, method)); return j; }
     const reason = j?.error?.errors?.[0]?.reason || j?.error?.details?.[0]?.reason || '';
+    if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') { quotaUsed = Math.max(quotaUsed, quotaLimit); persistQuota(); renderQuota(); }
+    const transient = r.status >= 500 || r.status === 429 || TRANSIENT_REASONS.has(reason);
+    if (transient && attempt < maxTry) {
+      const ra = +r.headers?.get?.('Retry-After');
+      await sleep(ra ? Math.min(ra * 1000, 10000) : backoff(attempt)); continue;
+    }
     const e = new Error(errMsg(reason, j?.error?.message, r.status));
     e.status = r.status; e.reason = reason; throw e;
   }
-  return j;
 }
+
+/* ---------- Ranking ---------- */
+const BAD_WORDS = ['cover', 'karaoke', 'reacao', 'react', 'reaction', 'tutorial', 'aula', 'como tocar', 'instrumental', 'remix', '8d', 'slowed', 'sped up', 'legendado', 'traducao', 'lyrics', 'nightcore', 'mashup', 'playback', 'medley', 'shorts'];
+// palavra inteira (antes: "aula" punia "Paula Fernandes", "cover" punia "Discover")
+const BAD_RES = BAD_WORDS.map(w => [w, new RegExp('(?:^| )' + w + '(?: |$)')]);
+const tokens = s => { const t = norm(s).split(' ').filter(Boolean); const l = t.filter(w => w.length > 1); return l.length ? l : t; };
 
 function scoreResult(r, item) {
   const t = norm(r.title), c = norm(r.channel), song = norm(item.song), art = norm(item.artist);
   const qn = norm(item.q);
+  const tTok = new Set(tokens(r.title)), cTok = new Set(tokens(r.channel));
+  const cov = (arr, set) => arr.length ? arr.filter(w => set.has(w)).length / arr.length : 0;
   let s = 0;
-  if (song && t.includes(song)) s += 4;
-  if (art && (t.includes(art) || c.includes(art))) s += 3;
-  if (art && c.replace(/ topic$/, '').replace(/vevo$/, '').trim() === art) s += 2;
+  // texto
+  s += 4 * cov(tokens(item.song), tTok);
+  if (song && t.includes(song)) s += 1;
+  if (art) {
+    const aT = tokens(item.artist);
+    s += 3 * Math.max(cov(aT, tTok), cov(aT, cTok));
+    if (c.replace(/ topic$/, '').replace(/vevo$/, '').trim() === art) s += 2;
+  }
   if (/\b(official|oficial|clipe|videoclipe|audio)\b/.test(t)) s += 2;
   if (/ topic$/.test(c) || /vevo/.test(c)) s += 1;
-  for (const bad of ['cover', 'karaoke', 'reacao', 'react', 'reaction', 'tutorial', 'aula', 'como tocar', 'instrumental', 'remix', '8d', 'slowed', 'sped up', 'legendado', 'traducao', 'lyrics'])
-    if (t.includes(bad) && !qn.includes(bad)) s -= 3;
-  if ((t.includes('ao vivo') || /\blive\b/.test(t)) && !qn.includes('ao vivo') && !qn.includes('live')) s -= 1;
+  for (const [bad, re] of BAD_RES) if (re.test(t) && !qn.includes(bad)) s -= 3;
+  if ((t.includes('ao vivo') || /\blive\b/.test(t)) && !qn.includes('ao vivo') && !/\blive\b/.test(qn)) s -= 1;
+  // sinais gratuitos vindos do videos.list (lote de 1 unidade)
+  const wantsLong = /\b(mix|completo|full|ao vivo|live|medley)\b/.test(qn);
+  if (r.s) {
+    if (r.s < 75) s -= 4; else if (r.s < 120) s -= 1;            // trechos / shorts
+    if (!wantsLong) { if (r.s > 720) s -= 3; if (r.s > 1200) s -= 3; }   // mixes / álbuns completos
+  }
+  if (r.cat === '10') s += 1;                                     // categoria Música
+  if (r.vw) s += Math.max(0, Math.min(2.5, (Math.log10(r.vw) - 4.5) * 0.8));   // popularidade (original > réplica)
+  if (r.emb === false) s -= 1;                                    // não toca no player embutido
+  if (r.blk) s -= 6;                                              // bloqueado no Brasil
   return s;
 }
+function rank(res, it) {
+  const sc = res.map((r, i) => ({r, s: scoreResult(r, it), i})).sort((a, b) => b.s - a.s || a.i - b.i);
+  it.score = sc.length ? Math.round(sc[0].s * 10) / 10 : 0;
+  it.low = !!sc.length && sc[0].s < LOW_CONF;
+  return sc.map(x => x.r);
+}
+const mergeResults = (fresh, old) => { const ids = new Set(fresh.map(r => r.id)); return [...fresh, ...old.filter(r => !ids.has(r.id))].slice(0, 15); };
 
-async function searchQuery(q, force = false) {
-  const key = norm(q);
-  if (!force) {
-    const c = await idb.get('cache', key);
-    if (c && Date.now() - c.t < 45 * 864e5) return c.results;
+/* ---------- Detalhes dos vídeos em LOTE (videos.list = 1 unidade para até 50 ids) ---------- */
+const DET_FIELDS = 'items(id,snippet(title,channelTitle,categoryId,thumbnails(medium(url))),contentDetails(duration,regionRestriction),statistics(viewCount),status(embeddable))';
+async function fetchDetails(ids) {
+  const j = await yt('videos', {part: 'snippet,contentDetails,statistics,status', id: ids.join(','), fields: DET_FIELDS});
+  const out = {};
+  for (const x of j.items || []) {
+    const rr = x.contentDetails?.regionRestriction;
+    const iso = x.contentDetails?.duration;
+    out[x.id] = {
+      core: {
+        dur: parseDur(iso), s: durSec(iso), vw: +x.statistics?.viewCount || 0, cat: x.snippet?.categoryId || '',
+        emb: x.status?.embeddable !== false,
+        blk: !!rr && (rr.blocked ? rr.blocked.includes(REGION) : rr.allowed ? !rr.allowed.includes(REGION) : false),
+      },
+      meta: {title: x.snippet?.title || '', channel: x.snippet?.channelTitle || '', thumb: x.snippet?.thumbnails?.medium?.url || ''},
+    };
   }
-  const j = await yt('search', {part: 'snippet', type: 'video', maxResults: 6, q, regionCode: 'BR', relevanceLanguage: 'pt'});
-  await addQuota(100);
-  let results = (j.items || []).filter(it => it.id?.videoId).map(it => ({
-    id: it.id.videoId,
-    title: decodeHtml(it.snippet.title),
-    channel: decodeHtml(it.snippet.channelTitle),
-    thumb: it.snippet.thumbnails?.medium?.url || it.snippet.thumbnails?.default?.url || `https://i.ytimg.com/vi/${it.id.videoId}/mqdefault.jpg`,
-    dur: ''
-  }));
-  // durations (1 unit)
-  if (results.length) {
-    try {
-      const v = await yt('videos', {part: 'contentDetails', id: results.map(r => r.id).join(',')});
-      await addQuota(1);
-      const m = {}; (v.items || []).forEach(x => m[x.id] = parseDur(x.contentDetails?.duration));
-      results.forEach(r => r.dur = m[r.id] || '');
-    } catch {}
+  return out;
+}
+const det = {q: new Map(), timer: null, mem: new Map()};
+// Resolve: objeto = detalhes · null = vídeo indisponível/removido · undefined = não deu para consultar agora
+function getDetail(id) {
+  if (det.mem.has(id)) return Promise.resolve(det.mem.get(id));
+  return new Promise(res => {
+    const e = det.q.get(id); if (e) e.push(res); else det.q.set(id, [res]);
+    clearTimeout(det.timer);
+    if (det.q.size >= 50) flushDetails(); else det.timer = setTimeout(flushDetails, 180);
+  });
+}
+async function flushDetails() {
+  clearTimeout(det.timer); det.timer = null;
+  while (det.q.size) {
+    const batch = [...det.q.entries()].slice(0, 50);
+    batch.forEach(([id]) => det.q.delete(id));
+    let map = null;
+    try { map = await fetchDetails(batch.map(b => b[0])); } catch { map = null; }   // enriquecimento é "melhor esforço"
+    batch.forEach(([id, rs]) => {
+      const v = map ? (map[id] || null) : undefined;
+      if (map) { if (det.mem.size > 2000) det.mem.clear(); det.mem.set(id, v); }
+      rs.forEach(r => r(v));
+    });
   }
-  await idb.put('cache', {q: key, t: Date.now(), results});
-  return results;
+}
+
+/* ---------- Cache persistente (IndexedDB) ---------- */
+const TTL_OK = 45 * 864e5, TTL_EMPTY = 7 * 864e5, TTL_VID = 30 * 864e5;
+async function readCache(q) {
+  const key = cacheKey(q);
+  let c = await idb.get('cache', key);
+  if (!c) {   // aproveita o cache da versão anterior (cada entrada valeu 100 de cota) e migra para a nova chave
+    const lk = legacyNorm(q);
+    if (lk && lk !== key) { const old = await idb.get('cache', lk); if (old && !old.v && old.results) { c = {...old, q: key}; await idb.put('cache', c); } }
+  }
+  if (!c || !c.results) return null;
+  return Date.now() - c.t < (c.results.length ? TTL_OK : TTL_EMPTY) ? c : null;
+}
+// Entradas antigas (sem sinais de duração/popularidade) são completadas por 1 unidade a cada ~5 buscas, nunca por nova busca
+async function enrich(c) {
+  const need = c.results.filter(r => !r.e);
+  if (!need.length) return c;
+  const ds = await Promise.all(need.map(r => getDetail(r.id)));
+  let changed = false;
+  need.forEach((r, i) => { const d = ds[i]; if (d === undefined) return; changed = true; if (d === null) r.gone = true; else Object.assign(r, d.core, {e: 1}); });
+  if (changed) { c.results = c.results.filter(r => !r.gone); c.v = 2; await idb.put('cache', c); }
+  return c;
+}
+async function pruneCache() {
+  try {
+    const now = Date.now();
+    for (const c of await idb.all('cache')) {
+      const k = String(c.q);
+      if (!c.v && !k.startsWith('v:')) {   // formato antigo: migra para a chave independente de ordem
+        if (!k.trim()) { await idb.del('cache', c.q); continue; }   // chave vazia = colisão de alfabetos não latinos (resultado inválido)
+        const nk = cacheKey(k);
+        if (nk !== k) { if (!(await idb.get('cache', nk))) await idb.put('cache', {...c, q: nk}); await idb.del('cache', k); }
+      }
+      const ttl = k.startsWith('v:') ? TTL_VID : (c.results?.length ? TTL_OK : TTL_EMPTY);
+      if (now - c.t > ttl) await idb.del('cache', c.q);
+    }
+  } catch {}
+}
+
+/* ---------- Busca ---------- */
+const inflight = new Map();   // consultas idênticas simultâneas viram UMA chamada
+async function searchQuery(q, {force = false, gate} = {}) {
+  const key = cacheKey(q);
+  if (inflight.has(key)) { addSaved(); return inflight.get(key); }
+  const p = (async () => {
+    if (!force) {
+      const c = await readCache(q);
+      if (c) { addSaved(); return (await enrich(c)).results; }
+    }
+    if (gate && !gate()) throw Object.assign(new Error('Sem cota para novas buscas hoje.'), {budget: true});
+    const j = await yt('search', {
+      part: 'snippet', type: 'video', maxResults: MAX_RESULTS, q, regionCode: REGION, relevanceLanguage: 'pt',
+      fields: 'items(id/videoId,snippet(title,channelTitle,thumbnails(medium(url))))',
+    });
+    const seen = new Set(); let results = [];
+    for (const it of j.items || []) {
+      const id = it.id?.videoId; if (!id || seen.has(id)) continue; seen.add(id);
+      results.push({id, title: decodeHtml(it.snippet?.title), channel: decodeHtml(it.snippet?.channelTitle),
+        thumb: it.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`, dur: ''});
+    }
+    const ds = await Promise.all(results.map(r => getDetail(r.id)));
+    results.forEach((r, i) => { const d = ds[i]; if (d) Object.assign(r, d.core, {e: 1}); else if (d === null) r.gone = true; });
+    results = results.filter(r => !r.gone);
+    await idb.put('cache', {q: key, t: Date.now(), v: 2, results});
+    return results;
+  })();
+  inflight.set(key, p);
+  p.then(() => inflight.delete(key), () => inflight.delete(key));
+  return p;
 }
 
 async function videoInfo(id) {
-  const j = await yt('videos', {part: 'snippet,contentDetails', id});
-  await addQuota(1);
-  const v = j.items?.[0]; if (!v) throw new Error('Vídeo não encontrado.');
-  return {id, title: decodeHtml(v.snippet.title), channel: decodeHtml(v.snippet.channelTitle),
-    thumb: v.snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`, dur: parseDur(v.contentDetails?.duration)};
+  const c = await idb.get('cache', 'v:' + id);
+  if (c?.info && Date.now() - c.t < TTL_VID) return c.info;
+  const d = await getDetail(id);
+  if (d === undefined) throw new Error('Não foi possível consultar o vídeo agora.');
+  if (d === null) throw new Error('Vídeo não encontrado ou indisponível.');
+  const info = {id, title: decodeHtml(d.meta.title), channel: decodeHtml(d.meta.channel), thumb: d.meta.thumb || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`, ...d.core, e: 1};
+  await idb.put('cache', {q: 'v:' + id, t: Date.now(), v: 2, info});
+  return info;
 }
 
 /* =========================================================
@@ -684,8 +865,7 @@ function getToken(forceConsent = false) {
         if (r.error) return rej(new Error(r.error_description || r.error));
         accessToken = r.access_token; tokenExp = Date.now() + (r.expires_in || 3600) * 1000;
         try {
-          const c = await yt('channels', {part: 'snippet', mine: 'true'}, {auth: true});
-          await addQuota(1);
+          const c = await yt('channels', {part: 'snippet', mine: 'true', fields: 'items(snippet(title))'}, {auth: true});
           channelName = c.items?.[0]?.snippet?.title || '';
           if (!channelName) { accessToken = ''; return rej(new Error(errMsg('youtubeSignupRequired'))); }
         } catch (e) { return rej(e); }
@@ -723,7 +903,7 @@ function parseList(text, order) {
     }
     return {
       id: uid(), raw, song, artist,
-      q: (song + (artist ? ' ' + artist : '')).trim(),
+      q: (song + (artist ? ' ' + artist : '')).trim(), oq: (song + (artist ? ' ' + artist : '')).trim(),
       status: 'pend', results: [], sel: 0, custom: null, include: true, err: ''
     };
   });
@@ -733,12 +913,15 @@ const chosen = it => it.custom || it.results[it.sel] || null;
 /* =========================================================
    Projects
    ========================================================= */
-async function saveProject() {
-  if (!project) return;
-  project.updated = Date.now();
-  await idb.put('projects', project);
-  await setSet('currentId', project.id);
+async function saveProject(p = project) {
+  if (!p) return;
+  p.updated = Date.now();
+  await idb.put('projects', p);
+  await setSet('currentId', p.id);
 }
+// Durante a busca, grava em lote (1x a cada 600 ms) em vez de regravar o projeto inteiro a cada música
+let saveTimer = null;
+function saveProjectSoon() { const p = project; clearTimeout(saveTimer); saveTimer = setTimeout(() => saveProject(p), 600); }
 
 async function startSearch() {
   const text = $('#listInput').value;
@@ -750,8 +933,14 @@ async function startSearch() {
 
   if (project && project._editing) {
     // keep results for lines that did not change
-    const old = new Map(project.items.map(i => [norm(i.q), i]));
-    project.items = items.map(n => { const o = old.get(norm(n.q)); return o ? {...o, raw: n.raw, song: n.song, artist: n.artist} : n; });
+    // reaproveita o que já foi buscado (inclusive trocas manuais) — chave = consulta ORIGINAL da linha
+    const old = new Map(project.items.map(i => [cacheKey(i.oq || i.q), i]));
+    const usedIds = new Set();
+    project.items = items.map(n => {
+      const o = old.get(cacheKey(n.q)); if (!o) return n;
+      const id = usedIds.has(o.id) ? uid() : o.id; usedIds.add(id);
+      return {...o, id, raw: n.raw, song: n.song, artist: n.artist};
+    });
     project.name = name; project.order = order; project.text = text; delete project._editing;
   } else {
     project = {id: uid(), name, order, text, created: Date.now(), updated: Date.now(), items, playlists: []};
@@ -763,13 +952,32 @@ async function startSearch() {
   runSearch();
 }
 
+async function planSearch(todo) {
+  const seen = new Set(); let hits = 0, fresh = 0;
+  for (const it of todo) {
+    const key = cacheKey(it.q);
+    if (seen.has(key)) { hits++; continue; }     // linha repetida na lista: 1 busca só
+    seen.add(key);
+    (await readCache(it.q)) ? hits++ : fresh++;
+  }
+  return {hits, fresh};
+}
+
 async function runSearch() {
   if (searching || !project) return;
   const todo = project.items.filter(i => i.status === 'pend' || i.status === 'err');
   if (!todo.length) { renderProject(); return; }
   searching = true; stopFlag = false;
   $('#progress').hidden = false; $('#btnResume').hidden = true;
-  let done = 0; const total = todo.length;
+  const used0 = quotaUsed;
+  const plan = await planSearch(todo);
+  // Orçamento: só dispara busca nova (100) se couber na cota que resta; o que está em cache é sempre atendido.
+  let freshBudget = Math.max(0, Math.floor((quotaRemaining() - 5) / 100));
+  if (!plan.fresh) toast('Tudo veio do cache — nenhuma cota usada. ✔', 'ok');
+  else if (plan.fresh > freshBudget) toast(`${plan.hits} em cache · ${plan.fresh} buscas novas (≈ ${fmtN(plan.fresh * 100)} de cota). Hoje só cabem ${freshBudget}; o restante fica pendente.`, 'err');
+  else toast(`${plan.hits} em cache · ${plan.fresh} buscas novas (≈ ${fmtN(plan.fresh * 100)} de cota).`);
+  const gate = () => freshBudget-- > 0;
+  let done = 0, skipped = 0, consec = 0; const total = todo.length;
   const upd = () => { $('#progBar').style.width = (done / total * 100) + '%'; $('#progTxt').textContent = `${done} / ${total}`; };
   upd();
   let fatal = null, idx = 0;
@@ -778,30 +986,32 @@ async function runSearch() {
       const it = todo[idx++];
       it.status = 'loading'; renderItem(it);
       try {
-        const res = await searchQuery(it.q);
-        if (!res.length) { it.status = 'none'; it.results = []; }
-        else {
-          // rank but keep API order for ties
-          const ranked = res.map((r, i) => ({r, s: scoreResult(r, it), i})).sort((a, b) => b.s - a.s || a.i - b.i).map(x => x.r);
-          it.results = ranked; it.sel = 0; it.status = 'ok'; it.err = '';
-        }
+        const res = await searchQuery(it.q, {gate});
+        if (!res.length) { it.status = 'none'; it.results = []; it.score = 0; it.low = false; }
+        else { it.results = rank(res, it); it.sel = 0; it.status = 'ok'; }
+        it.err = ''; consec = 0;
       } catch (e) {
-        it.status = 'err'; it.err = e.message;
-        if (e.reason === 'quotaExceeded' || e.reason === 'dailyLimitExceeded' || e.status === 400 || e.status === 403 && e.reason !== 'forbidden') { fatal = e; it.status = 'pend'; }
+        if (e.budget) { it.status = 'pend'; it.err = ''; skipped++; }
+        else {
+          it.status = 'err'; it.err = e.message;
+          if (FATAL_REASONS.has(e.reason)) { fatal = e; it.status = 'pend'; }
+          else if (++consec >= 4) { fatal = new Error(e.message + ' (busca pausada após falhas seguidas, para não gastar cota à toa — tente de novo em instantes.)'); }
+        }
       }
       done++; upd(); renderItem(it); renderStats();
-      await saveProject();
+      saveProjectSoon();
     }
   };
-  await Promise.all([worker(), worker(), worker()]);
+  await Promise.all(Array.from({length: CONCURRENCY}, worker));
   todo.forEach(i => { if (i.status === 'loading') i.status = 'pend'; });
   searching = false; $('#progress').hidden = true;
-  await saveProject(); renderProject();
+  clearTimeout(saveTimer); await saveProject(); renderProject();
   if (fatal) toast(fatal.message, 'err');
+  else if (skipped) toast(`${skipped} música(s) ficaram pendentes: a cota local de hoje acabou (restam ≈ ${fmtN(quotaRemaining())}). Continue amanhã — o que já foi buscado está salvo. Se o contador estiver errado, ajuste o limite em Configurações.`, 'err');
   else if (stopFlag) toast('Busca interrompida. Clique em “Continuar busca” para retomar.');
   else {
     const ok = project.items.filter(i => chosen(i)).length;
-    toast(`Pronto! ${ok} de ${project.items.length} músicas encontradas.`, 'ok');
+    toast(`Pronto! ${ok} de ${project.items.length} músicas encontradas · ${fmtN(quotaUsed - used0)} de cota usada.`, 'ok');
   }
 }
 
@@ -819,7 +1029,7 @@ function itemHTML(it, i) {
     thumb = `<button class="thumb" data-act="play" title="Ouvir"><img loading="lazy" src="${esc(c.thumb)}" alt="">${c.dur ? `<span class="dur">${esc(c.dur)}</span>` : ''}<span class="pl"><svg viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z"/></svg></span></button>`;
     info = `${req}<div class="found"><b>${esc(c.title)}</b> · ${esc(c.channel)}</div>
       <a class="link" href="${ytUrl(c.id)}" target="_blank" rel="noopener">${ytUrl(c.id)}</a>
-      ${it.custom ? '<div class="st man">Link escolhido manualmente</div>' : ''}`;
+      ${it.custom ? '<div class="st man">Link escolhido manualmente</div>' : ''}${it.low && !it.custom ? '<div class="st pend">⚠ Confira: correspondência incerta — use “Trocar” se não for este.</div>' : ''}`;
   } else {
     thumb = `<div class="thumb empty">${it.status === 'pend' ? 'pendente' : 'sem vídeo'}</div>`;
     const msg = it.status === 'none' ? 'Nada encontrado — clique em Trocar para buscar com outro termo ou colar um link.' :
@@ -971,7 +1181,7 @@ function renderAlts() {
   const it = project.items[swapIdx]; const c = chosen(it);
   const list = [...(it.custom ? [it.custom] : []), ...it.results.filter(r => !it.custom || r.id !== it.custom.id)];
   $('#swAlts').innerHTML = list.length ? list.map(r => `<div class="alt ${c && c.id === r.id ? 'sel' : ''}" data-vid="${r.id}">
-    <img loading="lazy" src="${esc(r.thumb)}" alt=""><div><b>${esc(r.title)}</b><small>${esc(r.channel)}${r.dur ? ' · ' + esc(r.dur) : ''}</small></div></div>`).join('')
+    <img loading="lazy" src="${esc(r.thumb)}" alt=""><div><b>${esc(r.title)}</b><small>${esc(r.channel)}${r.dur ? ' · ' + esc(r.dur) : ''}${r.vw ? ' · ' + fmtViews(r.vw) + ' views' : ''}</small></div></div>`).join('')
     : '<div class="muted" style="font-size:14px">Nenhum resultado ainda.</div>';
 }
 $('#swAlts').addEventListener('click', async e => {
@@ -979,19 +1189,22 @@ $('#swAlts').addEventListener('click', async e => {
   const it = project.items[swapIdx]; const id = a.dataset.vid;
   const k = it.results.findIndex(r => r.id === id);
   if (k >= 0) { it.sel = k; it.custom = null; }
-  it.status = 'ok';
+  it.status = 'ok'; it.low = false;
   await saveProject(); renderAlts(); renderItem(it); renderStats();
   toast('Vídeo trocado.', 'ok'); closeModal('mSwap');
 });
 $('#swSearch').onclick = async () => {
   const q = $('#swQuery').value.trim(); if (!q) return;
+  const it = project.items[swapIdx];
+  if (it.results.length && cacheKey(q) === cacheKey(it.q)) return toast('Esse termo já foi buscado — os resultados estão abaixo. Mude o termo para fazer uma nova busca (100 de cota).');
   const b = $('#swSearch'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
   try {
-    const it = project.items[swapIdx];
-    const res = await searchQuery(q, true);
-    it.q = q; it.results = res; it.sel = 0; it.custom = null; it.status = res.length ? 'ok' : 'none';
-    await saveProject(); renderAlts(); renderItem(it); renderStats();
+    const res = await searchQuery(q);                       // usa o cache se esse termo já foi buscado
     if (!res.length) toast('Nada encontrado com esse termo.', 'err');
+    else {
+      it.q = q; it.results = rank(mergeResults(res, it.results), it); it.sel = 0; it.custom = null; it.status = 'ok';
+      await saveProject(); renderAlts(); renderItem(it); renderStats();
+    }
   } catch (e) { toast(e.message, 'err'); }
   b.disabled = false; b.textContent = 'Buscar';
 };
@@ -1003,7 +1216,7 @@ $('#swUse').onclick = async () => {
     let info;
     try { info = await videoInfo(id); }
     catch { info = {id, title: 'Vídeo ' + id, channel: 'link manual', thumb: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`, dur: ''}; }
-    it.custom = info; it.status = 'ok';
+    it.custom = info; it.status = 'ok'; it.low = false;
     await saveProject(); renderItem(it); renderStats(); closeModal('mSwap'); toast('Link definido.', 'ok');
   } catch (e) { toast(e.message, 'err'); }
 };
@@ -1018,7 +1231,7 @@ function openPublish() {
   $('#pubDesc').value = project.items.filter(i => i.include && chosen(i)).map((it, k) => `${k + 1}. ${it.song}${it.artist ? ' - ' + it.artist : ''}`).join('\n').slice(0, 4900);
   $('#pubSub').textContent = `${vids.length} músicas serão adicionadas na ordem da lista`;
   const cost = 50 + vids.length * 50;
-  $('#pubCost').innerHTML = `Custo estimado: <b>${cost.toLocaleString('pt-BR')}</b> unidades de cota.` + (cost > 10000 ? ' <span style="color:var(--err)">Acima do limite diário — o restante pode ser concluído amanhã.</span>' : '');
+  $('#pubCost').innerHTML = costNote(cost);
   $('#pubProg').hidden = true; $('#pubLog').hidden = true; $('#pubLog').innerHTML = '';
   const last = project.playlists?.[0];
   $('#pubPlId').value = last ? last.url : '';
@@ -1041,7 +1254,7 @@ function setPubMode() {
     $('#pubGo').textContent = logged ? 'Verificar mudanças' : 'Entrar com Google e verificar mudanças';
   } else {
     const cost = 50 + vids.length * 50;
-    $('#pubCost').innerHTML = `Custo estimado: <b>${cost.toLocaleString('pt-BR')}</b> unidades de cota.` + (cost > 10000 ? ' <span style="color:var(--err)">Acima do limite diário — o restante pode ser concluído amanhã.</span>' : '');
+    $('#pubCost').innerHTML = costNote(cost);
     $('#pubGo').textContent = logged ? `Publicar no canal “${channelName}”` : 'Entrar com Google e publicar';
   }
 }
@@ -1058,8 +1271,7 @@ $('#pubLoadMine').onclick = async () => {
     await getToken();
     const all = []; let pageToken = '';
     do {
-      const j = await yt('playlists', {part: 'snippet,contentDetails', mine: 'true', maxResults: 50, ...(pageToken ? {pageToken} : {})}, {auth: true});
-      await addQuota(1);
+      const j = await yt('playlists', {part: 'snippet,contentDetails', mine: 'true', maxResults: 50, fields: 'nextPageToken,items(id,snippet(title),contentDetails(itemCount))', ...(pageToken ? {pageToken} : {})}, {auth: true});
       all.push(...(j.items || [])); pageToken = j.nextPageToken || '';
     } while (pageToken && all.length < 500);
     if (!all.length) { toast('Seu canal ainda não tem playlists.', 'err'); return; }
@@ -1075,8 +1287,7 @@ $('#pubPlSel').onchange = e => { if (e.target.value) { $('#pubPlId').value = 'ht
 async function planSync(plId, fixOrder) {
   const items = []; let pageToken = '';
   do {
-    const j = await yt('playlistItems', {part: 'snippet', playlistId: plId, maxResults: 50, ...(pageToken ? {pageToken} : {})}, {auth: true});
-    await addQuota(1);
+    const j = await yt('playlistItems', {part: 'snippet', playlistId: plId, maxResults: 50, fields: 'nextPageToken,items(id,snippet(position,title,resourceId(videoId)))', ...(pageToken ? {pageToken} : {})}, {auth: true});
     items.push(...(j.items || [])); pageToken = j.nextPageToken || '';
   } while (pageToken);
   items.sort((a, b) => (a.snippet.position ?? 0) - (b.snippet.position ?? 0));
@@ -1112,7 +1323,7 @@ async function runSync(plan) {
   const step = () => { k++; $('#pubBar').style.width = (k / Math.max(1, total) * 100) + '%'; $('#pubTxt').textContent = `${k} / ${total}`; };
   const call = async (fn, label) => {
     for (let tries = 1; tries <= 4; tries++) {
-      try { if (Date.now() > tokenExp - 60000) await getToken(); await fn(); await addQuota(50); ok++; return true; }
+      try { if (Date.now() > tokenExp - 60000) await getToken(); await fn(); ok++; return true; }
       catch (e) {
         if (e.reason === 'quotaExceeded') throw Object.assign(new Error('Cota esgotada. Rode “Atualizar playlist existente” de novo amanhã — ela continua de onde parou.'), {quota: true});
         if (e.status === 409 || e.status >= 500 || e.network) { await sleep(800 * tries); continue; }
@@ -1174,7 +1385,7 @@ async function publishUpdate() {
     go.textContent = 'Atualizando…'; $('#pubProg').hidden = false;
     if ($('#pubUpdMeta').checked) {
       await yt('playlists', {part: 'snippet,status'}, {method: 'PUT', auth: true, body: {id: plId, snippet: {title: $('#pubTitle').value.trim() || project.name, description: $('#pubDesc').value, defaultLanguage: 'pt-BR'}, status: {privacyStatus: document.querySelector('input[name=priv]:checked').value}}});
-      await addQuota(50); plog('Título/descrição atualizados.');
+      plog('Título/descrição atualizados.');
     }
     const {ok, fail} = await runSync(plan);
     const url = 'https://www.youtube.com/playlist?list=' + plId;
@@ -1210,7 +1421,6 @@ $('#pubGo').onclick = async () => {
     $('#pubProg').hidden = false;
     plog('Criando playlist “' + title + '”…');
     const pl = await yt('playlists', {part: 'snippet,status'}, {method: 'POST', auth: true, body: {snippet: {title, description, defaultLanguage: 'pt-BR'}, status: {privacyStatus}}});
-    await addQuota(50);
     const url = 'https://www.youtube.com/playlist?list=' + pl.id;
     plog('Playlist criada: ' + url, 'o');
     let ok = 0, fail = 0, k = 0;
@@ -1222,7 +1432,7 @@ $('#pubGo').onclick = async () => {
         try {
           if (Date.now() > tokenExp - 60000) await getToken();
           await yt('playlistItems', {part: 'snippet'}, {method: 'POST', auth: true, body: {snippet: {playlistId: pl.id, resourceId: {kind: 'youtube#video', videoId: c.id}}}});
-          await addQuota(50); added = true; ok++;
+          added = true; ok++;
         } catch (e) {
           tries++;
           if (e.reason === 'quotaExceeded') { plog('Cota esgotada. ' + ok + ' músicas adicionadas até aqui.', 'e'); throw Object.assign(new Error(e.message), {partial: {id: pl.id, url, ok}}); }
@@ -1367,12 +1577,13 @@ $$('[data-eye]').forEach(b => b.onclick = () => { const i = $('#' + b.dataset.ey
 $('#btnSaveCfg').onclick = async () => {
   apiKey = $('#cfgKey').value.trim(); clientId = $('#cfgClient').value.trim();
   await setSet('apiKey', apiKey); await setSet('clientId', clientId);
+  quotaLimit = Math.max(1000, +$('#cfgQuota').value || 10000); $('#cfgQuota').value = quotaLimit; await setSet('quotaLimit', quotaLimit); renderQuota();
   toast('Configurações salvas.', 'ok');
 };
 $('#btnTestKey').onclick = async () => {
   apiKey = $('#cfgKey').value.trim();
   if (!apiKey) return toast('Cole a API Key primeiro.', 'err');
-  try { await yt('videos', {part: 'id', id: 'jNQXAC9IVRw'}); await addQuota(1); await setSet('apiKey', apiKey); toast('API Key funcionando! ✔', 'ok'); }
+  try { await yt('videos', {part: 'id', id: 'jNQXAC9IVRw', fields: 'items(id)'}); await setSet('apiKey', apiKey); toast('API Key funcionando! ✔', 'ok'); }
   catch (e) { toast(e.message, 'err'); }
 };
 $('#btnLogin').onclick = async () => {
@@ -1405,7 +1616,7 @@ $('#btnWipe').onclick = async () => {
   if (!confirm('Apagar TODAS as listas, configurações e cache deste aparelho?')) return;
   await idb.clear('projects'); await idb.clear('settings'); await idb.clear('cache');
   apiKey = clientId = ''; $('#cfgKey').value = ''; $('#cfgClient').value = '';
-  project = null; resetInput(); renderQuota(); toast('Dados apagados.');
+  project = null; resetInput(); quotaUsed = 0; savedTotal = 0; quotaLimit = 10000; $('#cfgQuota').value = 10000; renderQuota(); toast('Dados apagados.');
 };
 
 /* =========================================================
@@ -1443,7 +1654,9 @@ function setupPWA() {
   apiKey = await getSet('apiKey', ''); clientId = await getSet('clientId', '');
   $('#cfgKey').value = apiKey; $('#cfgClient').value = clientId;
   $('#originTxt').textContent = location.protocol === 'file:' ? 'file:// (abra por um endereço http/https para usar o login)' : location.origin;
+  await loadQuota(); $('#cfgQuota').value = quotaLimit; pruneCache();
   setupPWA(); renderQuota(); renderAccount(); countLines();
+  document.addEventListener('visibilitychange', () => { if (document.hidden && db) { clearTimeout(saveTimer); if (project) saveProject(); persistQuota(true); } });
   const cur = await getSet('currentId', '');
   if (cur) { const p = await idb.get('projects', cur); if (p) { project = p; $('#inputCard').hidden = true; $('#buscaTitle').textContent = 'Resultado da busca'; renderProject(); } }
   const h = location.hash.slice(1);
